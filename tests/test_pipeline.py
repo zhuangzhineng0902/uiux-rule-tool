@@ -94,6 +94,8 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("必须、禁止、避免、建议、应该、最多只能、当...时、少于或等于、不超过、间距、等分", instructions)
         self.assertIn("Markdown 表格", instructions)
         self.assertIn("规则内容必须使用中文描述", instructions)
+        self.assertIn("只能从这些枚举值中选择其一", instructions)
+        self.assertIn("把对应的用途或场景写入 condition_if 的 If 条件中", instructions)
 
     def test_llm_rule_can_infer_default_value_from_then_clause(self) -> None:
         doc = SourceDocument(
