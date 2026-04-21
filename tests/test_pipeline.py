@@ -74,14 +74,14 @@ class PipelineTest(unittest.TestCase):
                 "subject": "",
                 "component": "",
                 "state": "default",
-                "property_name": "color",
-                "condition_if": "If 语义令牌 = 无效主色",
+                "property_name": "",
+                "condition_if": "",
                 "then_clause": "Then color 必须为 #FF4D4F",
                 "else_clause": "Else 保持默认规则",
                 "default_value": "",
                 "preferred_pattern": "使用统一 token",
                 "anti_pattern": "不要直接写死无效规则",
-                "evidence": "mocked invalid rule",
+                "evidence": "",
                 "source_ref": "memory://doc",
             }
         )
@@ -126,6 +126,64 @@ class PipelineTest(unittest.TestCase):
         assert row is not None
         self.assertEqual(row.default_value, "#1677FF")
 
+    def test_llm_rule_can_infer_subject_from_condition_if(self) -> None:
+        doc = SourceDocument(
+            source_type="markdown",
+            location="memory://doc",
+            title="测试文档",
+            text="",
+        )
+        item = {
+            "page_type": "foundation",
+            "subject": "",
+            "component": "",
+            "state": "default",
+            "property_name": "color",
+            "condition_if": "If 语义令牌 = 品牌主色",
+            "then_clause": "Then color 必须为 #1677FF",
+            "else_clause": "Else 保持默认规则",
+            "default_value": "#1677FF",
+            "preferred_pattern": "使用统一品牌主色 token",
+            "anti_pattern": "不要混用多个接近的主色蓝",
+            "evidence": "",
+            "source_ref": "memory://doc",
+        }
+
+        row = _coerce_rule(item, doc, "foundation", "FDN")
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row.subject, "品牌主色")
+
+    def test_llm_rule_can_infer_subject_from_component(self) -> None:
+        doc = SourceDocument(
+            source_type="markdown",
+            location="memory://doc",
+            title="测试文档",
+            text="",
+        )
+        item = {
+            "page_type": "component",
+            "subject": "",
+            "component": "button",
+            "state": "hover",
+            "property_name": "background-color",
+            "condition_if": "If 状态 = hover",
+            "then_clause": "Then background-color 必须为 #1677FF",
+            "else_clause": "Else 保持默认规则",
+            "default_value": "#1677FF",
+            "preferred_pattern": "使用统一按钮悬停色",
+            "anti_pattern": "不要混用多个按钮悬停色",
+            "evidence": "",
+            "source_ref": "memory://doc",
+        }
+
+        row = _coerce_rule(item, doc, "component", "CMP")
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row.subject, "button")
+
     def test_llm_rule_can_be_kept_when_default_value_is_empty(self) -> None:
         doc = SourceDocument(
             source_type="markdown",
@@ -168,7 +226,7 @@ class PipelineTest(unittest.TestCase):
             "subject": "",
             "component": "",
             "state": "default",
-            "property_name": "color",
+            "property_name": "",
             "condition_if": "",
             "then_clause": "Then color 必须为 #1677FF",
             "else_clause": "",
@@ -474,7 +532,7 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(meta["kept_rule_count"], 1)
             self.assertEqual(meta["dropped_rule_count"], 1)
             self.assertEqual(len(dropped["dropped_rules"]), 1)
-            self.assertIn("缺少 subject", dropped["dropped_rules"][0])
+            self.assertIn("缺少 property_name", dropped["dropped_rules"][0])
 
     def test_remote_url_from_config_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -489,7 +489,7 @@ def _rows_from_payload(payload: dict[str, object], doc: SourceDocument) -> tuple
             if row is not None:
                 rows.append(row)
             else:
-                dropped_messages.append(_build_drop_reason(item, payload_key))
+                dropped_messages.append(_build_drop_reason(item, payload_key, doc, layer))
 
     if dropped_messages:
         preview = "；".join(dropped_messages[:3])
@@ -503,12 +503,12 @@ def _rows_from_payload(payload: dict[str, object], doc: SourceDocument) -> tuple
 
 def _coerce_rule(item: dict[str, object], doc: SourceDocument, layer: str, fixed_prefix: str) -> RuleRow | None:
     page_type = _normalize_page_type(str(item.get("page_type", "")).strip(), layer)
-    subject = str(item.get("subject", "")).strip()
     component = str(item.get("component", "")).strip()
     state = str(item.get("state", "")).strip() or "default"
     property_name = str(item.get("property_name", "")).strip()
     then_clause_raw = str(item.get("then_clause", "")).strip()
     default_value = str(item.get("default_value", "")).strip() or _infer_default_value_from_then_clause(then_clause_raw)
+    subject = _infer_subject(item, doc, layer)
 
     if not subject or not property_name:
         return None
@@ -579,17 +579,95 @@ def _infer_default_value_from_then_clause(then_clause: str) -> str:
     if "必须被显式定义" in text:
         return "required"
 
+    return "" 
+
+
+def _infer_subject(item: dict[str, object], doc: SourceDocument, layer: str) -> str:
+    subject = str(item.get("subject", "")).strip()
+    if subject:
+        return subject
+
+    component = str(item.get("component", "")).strip()
+    if component:
+        return component
+
+    condition_candidate = _extract_subject_from_condition(str(item.get("condition_if", "")).strip())
+    if condition_candidate:
+        return condition_candidate
+
+    evidence_candidate = _extract_subject_from_evidence(str(item.get("evidence", "")).strip())
+    if evidence_candidate:
+        return evidence_candidate
+
+    title_candidate = _clean_subject_candidate(doc.title)
+    if title_candidate:
+        return title_candidate
+
+    property_name = str(item.get("property_name", "")).strip()
+    if property_name:
+        return f"未命名对象-{property_name}" if layer != "component" else f"未命名组件-{property_name}"
+
     return ""
 
 
-def _build_drop_reason(item: dict[str, object], payload_key: str) -> str:
+def _extract_subject_from_condition(condition_if: str) -> str:
+    text = (condition_if or "").strip()
+    if not text:
+        return ""
+
+    patterns = [
+        r"语义令牌\s*=\s*([^\s,，;；]+)",
+        r"组件\s*=\s*([^\s,，;；]+)",
+        r"对象\s*=\s*([^\s,，;；]+)",
+        r"文本角色\s*=\s*([^\s,，;；]+)",
+        r"元素角色\s*=\s*([^\s,，;；]+)",
+        r"用途\s*=\s*([^\s,，;；]+)",
+        r"使用场景\s*=\s*([^\s,，;；]+)",
+        r"适用场景\s*=\s*([^\s,，;；]+)",
+        r"场景\s*=\s*([^\s,，;；]+)",
+        r"页面类型\s*=\s*([^\s,，;；]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return _clean_subject_candidate(match.group(1))
+    return ""
+
+
+def _extract_subject_from_evidence(evidence: str) -> str:
+    text = (evidence or "").strip()
+    if not text:
+        return ""
+
+    if "->" in text:
+        return _clean_subject_candidate(text.split("->", 1)[0])
+
+    selector_match = re.search(r"([.#]?[A-Za-z0-9_-]+)(?=[:\s])", text)
+    if selector_match:
+        return _clean_subject_candidate(selector_match.group(1))
+
+    return ""
+
+
+def _clean_subject_candidate(value: str) -> str:
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+    candidate = re.sub(r"^If\s+", "", candidate)
+    candidate = candidate.strip("()[]{} ")
+    candidate = re.sub(r":[A-Za-z0-9_-]+$", "", candidate)
+    return candidate.strip()
+
+
+def _build_drop_reason(item: dict[str, object], payload_key: str, doc: SourceDocument, layer: str) -> str:
     missing_fields: list[str] = []
-    if not str(item.get("subject", "")).strip():
+    subject = _infer_subject(item, doc, layer)
+    if not subject:
         missing_fields.append("subject")
     if not str(item.get("property_name", "")).strip():
         missing_fields.append("property_name")
 
-    subject_preview = str(item.get("subject", "")).strip() or "(empty-subject)"
+    subject_preview = subject or "(empty-subject)"
     if not missing_fields:
         missing_fields.append("unknown")
     return f"{payload_key}:{subject_preview}: 缺少 {', '.join(missing_fields)}"
