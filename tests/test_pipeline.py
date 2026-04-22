@@ -15,17 +15,17 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from uiux_rule_agent.cli import run
-from uiux_rule_agent.config import load_app_config
-from uiux_rule_agent.ingest import load_documents
-from uiux_rule_agent.llm_extractor import (
+from uiux_rule_tool.cli import run
+from uiux_rule_tool.config import load_app_config
+from uiux_rule_tool.ingest import load_documents
+from uiux_rule_tool.llm_extractor import (
     LLMExtractorError,
     _build_instructions,
     _coerce_rule,
     extract_rules_with_llm,
 )
-from uiux_rule_agent.models import RuleRow, SourceDocument
-from uiux_rule_agent.writer import CSV_FILE_ENCODING
+from uiux_rule_tool.models import RuleRow, SourceDocument
+from uiux_rule_tool.writer import CSV_FILE_ENCODING
 
 
 class FakeJSONResponse:
@@ -374,7 +374,7 @@ class PipelineTest(unittest.TestCase):
                 }
                 return FakeJSONResponse(payload)
 
-            with patch("uiux_rule_agent.llm_extractor.urlopen", side_effect=fake_urlopen):
+            with patch("uiux_rule_tool.llm_extractor.urlopen", side_effect=fake_urlopen):
                 rows = extract_rules_with_llm([doc], config=config)
 
             self.assertEqual(len(rows), 1)
@@ -422,7 +422,7 @@ class PipelineTest(unittest.TestCase):
                 }
                 return FakeJSONResponse(payload)
 
-            with patch("uiux_rule_agent.llm_extractor.urlopen", side_effect=fake_urlopen):
+            with patch("uiux_rule_tool.llm_extractor.urlopen", side_effect=fake_urlopen):
                 rows = extract_rules_with_llm([doc], config=config)
 
             self.assertEqual(len(rows), 1)
@@ -477,7 +477,7 @@ class PipelineTest(unittest.TestCase):
                     }
                 )
 
-            with patch("uiux_rule_agent.llm_extractor.urlopen", side_effect=fake_urlopen):
+            with patch("uiux_rule_tool.llm_extractor.urlopen", side_effect=fake_urlopen):
                 rows = extract_rules_with_llm([doc], config=config)
 
             self.assertEqual(len(rows), 1)
@@ -513,7 +513,7 @@ class PipelineTest(unittest.TestCase):
                     }
                 )
 
-            with patch("uiux_rule_agent.llm_extractor.urlopen", side_effect=fake_urlopen):
+            with patch("uiux_rule_tool.llm_extractor.urlopen", side_effect=fake_urlopen):
                 result = run(None, config_path=str(config_path))
 
             self.assertEqual(result["foundation_rules"], 1)
@@ -735,7 +735,7 @@ class PipelineTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("uiux_rule_agent.cli.extract_rules_with_llm", return_value=llm_rows):
+            with patch("uiux_rule_tool.cli.extract_rules_with_llm", return_value=llm_rows):
                 result = run(
                     str(fixture),
                     output_dir=temp_dir,
@@ -764,7 +764,7 @@ class PipelineTest(unittest.TestCase):
             )
 
             with patch(
-                "uiux_rule_agent.cli.extract_rules_with_llm",
+                "uiux_rule_tool.cli.extract_rules_with_llm",
                 side_effect=LLMExtractorError("llm unavailable"),
             ):
                 result = run(str(fixture), output_dir=temp_dir, extractor="auto", config_path=str(config_path))

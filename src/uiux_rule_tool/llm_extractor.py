@@ -494,7 +494,7 @@ def _rows_from_payload(payload: dict[str, object], doc: SourceDocument) -> tuple
     if dropped_messages:
         preview = "；".join(dropped_messages[:3])
         print(
-            f"[uiux-rule-agent] LLM 返回的部分规则被跳过，共 {len(dropped_messages)} 条。原因示例：{preview}",
+            f"[uiux-rule-tool] LLM 返回的部分规则被跳过，共 {len(dropped_messages)} 条。原因示例：{preview}",
             file=sys.stderr,
         )
 

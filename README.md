@@ -1,6 +1,6 @@
-# UI/UX 规范规则生成 Agent
+# UI/UX 规范规则生成工具
 
-`uiux-rule-agent` 用来读取本地 Markdown 文件或目录，并把抽取出的原子化 UI/UX 规范写入 `data/` 目录下的 CSV 文件。
+`uiux-rule-tool` 用来读取本地 Markdown 文件或目录，并把抽取出的原子化 UI/UX 规范写入 `data/` 目录下的 CSV 文件。
 
 ## 生成结果
 
@@ -58,7 +58,7 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 ## 快速开始
 
 ```bash
-python3 ./agent.py --input ./examples/sample-guidelines.md --output-dir ./data
+python3 ./tool.py --input ./examples/sample-guidelines.md --output-dir ./data
 ```
 
 所有运行时配置都集中在 [config/ai.toml](/Users/zhuangzhineng/Documents/ai_workspace/uiux-rule-agent/config/ai.toml:1) 中，包括输入源、输出目录、抽取策略和 OpenAI 设置。
@@ -85,7 +85,7 @@ strategy = "auto"
 当 `config/ai.toml` 里已经配置好 `input.sources` 和 `output.directory` 后，可以直接无参运行：
 
 ```bash
-python3 ./agent.py
+python3 ./tool.py
 ```
 
 `[openai].api_style` 当前支持以下枚举值：
@@ -105,6 +105,33 @@ python3 ./agent.py
   强制使用内置启发式抽取，不调用 LLM，适合离线、低成本或追求可复现性的场景。
 - `llm`
   强制使用 LLM 抽取；如果没有配置 `openai.api_key`，或调用失败，会直接报错，不会自动回退。
+
+## LLM 抽取逻辑
+
+当输入走 LLM 抽取时，代码里的提示词会要求模型遵守以下规则：
+
+1. 规则必须原子化，每条规则只描述一个属性。
+2. 规则必须分到 `foundation`、`component`、`global` 三层之一。
+3. 只要规则带条件，`condition_if`、`then_clause`、`else_clause` 就必须使用 `If / Then / Else` 结构。
+4. `component` 层必须关注不同交互状态下的视觉参数。
+5. `global` 层必须把动态行为转换成逻辑断言，例如触发条件、关闭逻辑、反馈位置。
+6. 必须主动寻找禁止项，并写入 `anti_pattern`。
+7. 只输出有明确证据支持的规则，没有证据不要猜。
+8. 所有字段都必须返回字符串；不适用时返回空字符串。
+9. `source_ref` 必须使用输入文档的 `location`；`evidence` 必须是简短证据摘要，不能长段复制原文。
+10. 如果输入文档已经限定了层级，就只输出对应层级数组，其余层级返回空数组。
+11. 文档里只要出现具体的颜色值、像素值、百分比、字号、行高、圆角、阴影、间距等明确数值，就优先总结成规则。
+12. 文档里如果出现 `必须`、`禁止`、`避免`、`建议`、`应该`、`最多只能`、`当...时`、`少于或等于`、`不超过`、`间距`、`等分` 等措辞或同义表达，就优先总结成规则。
+13. 遇到 Markdown 表格时，必须结合表头和单元格内容一起理解；表头定义字段语义，单元格值必须和对应表头配对后再总结规则。
+14. 规则内容必须用中文描述；只有 `If / Then / Else`、原始颜色值、原始像素值、组件名、技术字段名等必须保留的字面量可以直接保留。
+15. 如果文档里有很多同类型的颜色值、像素值、百分比等罗列值一起出现，且没有涉及用途、使用场景、适用场景，这会被视为一个“枚举值集合”；模型需要把这组同类型原始值汇总成一条“只能从这些枚举值中选择其一”的规则，并保留完整原始枚举值。
+16. 如果文档里涉及用途、适用场景、使用场景等描述，模型必须按每个用途或场景分别总结规则，并把对应的用途或场景写进 `condition_if` 的 `If` 条件里。
+
+当 `Chat Completions API` 进入纯文本 JSON 兜底模式时，还会额外要求模型：
+
+1. 只返回一个合法 JSON 对象，不附加解释。
+2. 不要输出 Markdown 代码块，不要输出前后说明文字。
+3. 顶层字段必须是 `foundation_rules`、`component_rules`、`global_rules`。
 
 ## 输入模式
 
@@ -160,13 +187,13 @@ examples/routing-demo/
 对应命令：
 
 ```bash
-python3 ./agent.py --input ./examples/routing-demo --output-dir ./data
+python3 ./tool.py --input ./examples/routing-demo --output-dir ./data
 ```
 
 如果你只输入某个命名目录本身，也会全部强制写到对应 CSV：
 
 ```bash
-python3 ./agent.py --input ./examples/routing-demo/component-rules --output-dir ./data
+python3 ./tool.py --input ./examples/routing-demo/component-rules --output-dir ./data
 ```
 
 ## 常用运行方式
@@ -175,19 +202,19 @@ python3 ./agent.py --input ./examples/routing-demo/component-rules --output-dir 
 
 ```bash
 python3 -m pip install -e .
-uiux-rule-agent --input ./examples/sample-guidelines.md --output-dir ./data
+uiux-rule-tool --input ./examples/sample-guidelines.md --output-dir ./data
 ```
 
 以本地 Markdown 目录为输入：
 
 ```bash
-uiux-rule-agent --input ./examples/routing-demo --output-dir ./data
+uiux-rule-tool --input ./examples/routing-demo --output-dir ./data
 ```
 
 以多个本地 Markdown 文件为输入：
 
 ```bash
-python3 ./agent.py \
+python3 ./tool.py \
   --input ./examples/sample-guidelines.md \
   --input ./examples/routing-demo/mixed.md \
   --output-dir ./data
@@ -196,13 +223,13 @@ python3 ./agent.py \
 以单个本地 Markdown 文件为输入：
 
 ```bash
-python3 ./agent.py --input ./examples/sample-guidelines.md --output-dir ./data
+python3 ./tool.py --input ./examples/sample-guidelines.md --output-dir ./data
 ```
 
 显式使用 LLM 抽取：
 
 ```bash
-python3 ./agent.py \
+python3 ./tool.py \
   --config ./config/ai.toml \
   --extractor llm \
   --llm-model gpt-5.4-mini
@@ -211,7 +238,7 @@ python3 ./agent.py \
 如果保持 `auto` 模式，那么只有当 `config/ai.toml` 中存在非空的 `openai.api_key` 时，才会优先走 LLM 抽取；否则会自动回退到内置启发式抽取：
 
 ```bash
-python3 ./agent.py
+python3 ./tool.py
 ```
 
 ## 调试排查

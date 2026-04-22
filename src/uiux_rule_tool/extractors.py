@@ -426,7 +426,7 @@ def extract_component_rules(docs: list[SourceDocument]) -> list[RuleRow]:
                     preferred=preferred_pattern("component"),
                     anti_pattern=f"禁止 {component} 缺失 {required_state} 态导致状态不完整",
                     evidence="synthetic:state-completeness",
-                    source_ref="agent:state-completeness",
+                    source_ref="tool:state-completeness",
                 )
             )
 

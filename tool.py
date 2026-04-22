@@ -12,9 +12,11 @@ if str(SRC) not in sys.path:
 
 def _load_main():
     try:
-        return importlib.import_module("uiux_rule_agent.cli").main
+        return importlib.import_module("uiux_rule_tool.cli").main
     except ModuleNotFoundError as exc:
-        raise RuntimeError(f"无法从 {SRC} 加载 uiux_rule_agent.cli，请检查项目目录结构。") from exc
+        raise RuntimeError(
+            f"无法从 {SRC} 加载 uiux_rule_tool.cli，请检查项目目录结构。"
+        ) from exc
 
 
 if __name__ == "__main__":
