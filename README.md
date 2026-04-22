@@ -61,7 +61,7 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 python3 ./tool.py --input ./examples/sample-guidelines.md --output-dir ./data
 ```
 
-所有运行时配置都集中在 [config/ai.toml](/Users/zhuangzhineng/Documents/ai_workspace/uiux-rule-agent/config/ai.toml:1) 中，包括输入源、输出目录、抽取策略和 OpenAI 设置。
+所有运行时配置都集中在 [config/ai.toml](config/ai.toml) 中，包括输入源、输出目录、抽取策略和 OpenAI 设置。
 
 最小配置示例：
 
