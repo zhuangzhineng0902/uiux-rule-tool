@@ -1,5 +1,7 @@
 # 全局布局与交互示例
 
+此文件用于演示 global 层的本地 Markdown 输入。
+
 ```css
 .page-shell {
   padding: 24px 32px;

@@ -1,5 +1,7 @@
 # 按钮组件示例
 
+此文件用于演示 component 层的本地 Markdown 输入。
+
 ```css
 .button {
   height: 32px;
