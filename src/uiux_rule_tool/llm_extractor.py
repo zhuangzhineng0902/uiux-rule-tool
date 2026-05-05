@@ -68,8 +68,9 @@ def extract_rules_with_llm(
         payload, debug_info = _extract_doc_payload(doc, config, selected_model, selected_api_style)
         doc_rows, dropped_messages = _rows_from_payload(payload, doc)
         rows.extend(doc_rows)
+        debug_target = None
         if debug_dir:
-            _write_llm_debug_artifacts(
+            debug_target = _write_llm_debug_artifacts(
                 debug_dir=debug_dir,
                 doc_index=index,
                 doc=doc,
@@ -79,6 +80,7 @@ def extract_rules_with_llm(
                 debug_info=debug_info,
                 dropped_messages=dropped_messages,
             )
+        _emit_dropped_rules_log(dropped_messages, debug_target)
 
     return rows
 
@@ -491,14 +493,20 @@ def _rows_from_payload(payload: dict[str, object], doc: SourceDocument) -> tuple
             else:
                 dropped_messages.append(_build_drop_reason(item, payload_key, doc, layer))
 
-    if dropped_messages:
-        preview = "；".join(dropped_messages[:3])
-        print(
-            f"[uiux-rule-tool] LLM 返回的部分规则被跳过，共 {len(dropped_messages)} 条。原因示例：{preview}",
-            file=sys.stderr,
-        )
-
     return rows, dropped_messages
+
+
+def _emit_dropped_rules_log(dropped_messages: list[str], debug_target: Path | None) -> None:
+    if not dropped_messages:
+        return
+
+    preview = "；".join(dropped_messages[:3])
+    message = f"[uiux-rule-tool] LLM 返回的部分规则被跳过，共 {len(dropped_messages)} 条。原因示例：{preview}"
+    if debug_target is not None:
+        message += f"。debug目录：{debug_target}；跳过规则文件：{debug_target / 'dropped-rules.json'}"
+    else:
+        message += "。未配置 debug_dir，未写出 debug 文件。"
+    print(message, file=sys.stderr)
 
 
 def _coerce_rule(item: dict[str, object], doc: SourceDocument, layer: str, fixed_prefix: str) -> RuleRow | None:
@@ -687,7 +695,7 @@ def _write_llm_debug_artifacts(
     payload: dict[str, object],
     debug_info: dict[str, object],
     dropped_messages: list[str],
-) -> None:
+) -> Path:
     target = Path(debug_dir) / "llm" / f"doc-{doc_index:03d}"
     target.mkdir(parents=True, exist_ok=True)
     payload_rule_count = _count_payload_rules(payload)
@@ -713,6 +721,7 @@ def _write_llm_debug_artifacts(
     _write_json_file(target / "payload.json", payload)
     _write_json_file(target / "dropped-rules.json", {"dropped_rules": dropped_messages})
     (target / "output-text.txt").write_text(str(debug_info.get("output_text", "")), encoding="utf-8")
+    return target
 
 
 def _write_json_file(path: Path, payload: object) -> None:

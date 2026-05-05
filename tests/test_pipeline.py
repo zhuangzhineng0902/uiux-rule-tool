@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from io import BytesIO
+from io import StringIO
 from unittest.mock import patch
 from pathlib import Path
 from urllib.error import HTTPError
@@ -588,7 +589,11 @@ class PipelineTest(unittest.TestCase):
                     }
                 )
 
-            with patch("uiux_rule_tool.llm_extractor.urlopen", side_effect=fake_urlopen):
+            stderr = StringIO()
+            with (
+                patch("uiux_rule_tool.llm_extractor.urlopen", side_effect=fake_urlopen),
+                patch("sys.stderr", stderr),
+            ):
                 result = run(None, config_path=str(config_path))
 
             self.assertEqual(result["foundation_rules"], 1)
@@ -608,6 +613,8 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(meta["dropped_rule_count"], 1)
             self.assertEqual(len(dropped["dropped_rules"]), 1)
             self.assertIn("缺少 property_name", dropped["dropped_rules"][0])
+            self.assertIn(str(debug_dir), stderr.getvalue())
+            self.assertIn(str(debug_dir / "dropped-rules.json"), stderr.getvalue())
 
     def test_remote_url_from_config_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
