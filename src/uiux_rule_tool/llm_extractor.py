@@ -66,6 +66,7 @@ def extract_rules_with_llm(
 
     for index, doc in enumerate(docs, start=1):
         try:
+            print(f"[uiux-rule-tool] 正在抽取文件：{doc.location}", file=sys.stderr)
             payload, debug_info = _extract_doc_payload(doc, config, selected_model, selected_api_style)
             doc_rows, dropped_messages = _rows_from_payload(payload, doc)
             rows.extend(doc_rows)

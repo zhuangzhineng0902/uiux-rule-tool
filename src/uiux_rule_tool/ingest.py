@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -67,6 +68,7 @@ def load_markdown_docs(path_value: str) -> list[SourceDocument]:
 
     for file in files:
         try:
+            print(f"[uiux-rule-tool] 正在解析文件：{file}", file=sys.stderr)
             text = file.read_text(encoding="utf-8", errors="ignore")
             title = next(
                 (normalize_space(line.lstrip("#").strip()) for line in text.splitlines() if line.strip().startswith("#")),
