@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -357,6 +358,40 @@ class PipelineTest(unittest.TestCase):
             self.assertGreater(result["component_rules"], 0)
             self.assertGreater(result["global_rules"], 0)
             self.assertTrue((output_dir / "foundation-rules.csv").exists())
+
+    def test_markdown_parse_error_mentions_file_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            markdown_path = Path(temp_dir) / "broken.md"
+            markdown_path.write_text("# Broken\n\n```css\n.button { color: red; }\n```\n", encoding="utf-8")
+
+            with (
+                patch("uiux_rule_tool.ingest.parse_css_rules", side_effect=ValueError("bad css")),
+                self.assertRaisesRegex(RuntimeError, rf"解析 Markdown 文件失败：{re.escape(str(markdown_path))}：bad css"),
+            ):
+                load_documents(str(markdown_path))
+
+    def test_llm_parse_error_mentions_document_location(self) -> None:
+        doc = SourceDocument(
+            source_type="markdown",
+            location="/tmp/broken-guideline.md",
+            title="Broken",
+            text="",
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "ai.toml"
+            config_path.write_text(
+                '[openai]\napi_key = "test-key"\nbase_url = "https://example.com/v1"\nmodel = "gpt-5.4-mini"\napi_style = "chat_completions"\n\n'
+                '[extraction]\nstrategy = "llm"\n',
+                encoding="utf-8",
+            )
+            config = load_app_config(str(config_path))
+
+            with (
+                patch("uiux_rule_tool.llm_extractor._extract_doc_payload", side_effect=LLMExtractorError("bad payload")),
+                self.assertRaisesRegex(LLMExtractorError, r"解析文件失败：/tmp/broken-guideline\.md：bad payload"),
+            ):
+                extract_rules_with_llm([doc], config=config)
 
     def test_root_directory_name_can_force_component_bucket(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

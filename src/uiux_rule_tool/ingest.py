@@ -66,22 +66,25 @@ def load_markdown_docs(path_value: str) -> list[SourceDocument]:
     documents: list[SourceDocument] = []
 
     for file in files:
-        text = file.read_text(encoding="utf-8", errors="ignore")
-        title = next(
-            (normalize_space(line.lstrip("#").strip()) for line in text.splitlines() if line.strip().startswith("#")),
-            file.stem,
-        )
-        css_blocks = re.findall(r"```css(.*?)```", text, flags=re.S | re.I)
-        document = SourceDocument(
-            source_type="markdown",
-            location=str(file),
-            title=title,
-            text=strip_code_fences(text),
-            source_bucket=infer_markdown_bucket(file, root),
-            css_blocks=css_blocks,
-        )
-        document.css_rules = [rule for css in document.css_blocks for rule in parse_css_rules(css)]
-        documents.append(document)
+        try:
+            text = file.read_text(encoding="utf-8", errors="ignore")
+            title = next(
+                (normalize_space(line.lstrip("#").strip()) for line in text.splitlines() if line.strip().startswith("#")),
+                file.stem,
+            )
+            css_blocks = re.findall(r"```css(.*?)```", text, flags=re.S | re.I)
+            document = SourceDocument(
+                source_type="markdown",
+                location=str(file),
+                title=title,
+                text=strip_code_fences(text),
+                source_bucket=infer_markdown_bucket(file, root),
+                css_blocks=css_blocks,
+            )
+            document.css_rules = [rule for css in document.css_blocks for rule in parse_css_rules(css)]
+            documents.append(document)
+        except Exception as exc:
+            raise RuntimeError(f"解析 Markdown 文件失败：{file}：{exc}") from exc
 
     return documents
 

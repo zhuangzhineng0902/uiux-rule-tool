@@ -65,22 +65,25 @@ def extract_rules_with_llm(
     rows: list[RuleRow] = []
 
     for index, doc in enumerate(docs, start=1):
-        payload, debug_info = _extract_doc_payload(doc, config, selected_model, selected_api_style)
-        doc_rows, dropped_messages = _rows_from_payload(payload, doc)
-        rows.extend(doc_rows)
-        debug_target = None
-        if debug_dir:
-            debug_target = _write_llm_debug_artifacts(
-                debug_dir=debug_dir,
-                doc_index=index,
-                doc=doc,
-                model=selected_model,
-                api_style=selected_api_style,
-                payload=payload,
-                debug_info=debug_info,
-                dropped_messages=dropped_messages,
-            )
-        _emit_dropped_rules_log(dropped_messages, debug_target)
+        try:
+            payload, debug_info = _extract_doc_payload(doc, config, selected_model, selected_api_style)
+            doc_rows, dropped_messages = _rows_from_payload(payload, doc)
+            rows.extend(doc_rows)
+            debug_target = None
+            if debug_dir:
+                debug_target = _write_llm_debug_artifacts(
+                    debug_dir=debug_dir,
+                    doc_index=index,
+                    doc=doc,
+                    model=selected_model,
+                    api_style=selected_api_style,
+                    payload=payload,
+                    debug_info=debug_info,
+                    dropped_messages=dropped_messages,
+                )
+            _emit_dropped_rules_log(dropped_messages, debug_target)
+        except LLMExtractorError as exc:
+            raise LLMExtractorError(f"解析文件失败：{doc.location}：{exc}") from exc
 
     return rows
 
