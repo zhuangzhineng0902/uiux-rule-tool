@@ -510,11 +510,16 @@ def _coerce_rule(item: dict[str, object], doc: SourceDocument, layer: str, fixed
     default_value = str(item.get("default_value", "")).strip() or _infer_default_value_from_then_clause(then_clause_raw)
     subject = _infer_subject(item, doc, layer)
 
-    if not subject or not property_name:
+    if not subject:
+        return None
+    if layer == "component" and not property_name:
         return None
 
     condition_if = _ensure_prefix(str(item.get("condition_if", "")).strip(), "If ", fallback=f"If 对象 = {subject}")
-    then_fallback = f"Then {property_name} 必须为 {default_value}" if default_value else f"Then {property_name} 必须被定义"
+    if property_name:
+        then_fallback = f"Then {property_name} 必须为 {default_value}" if default_value else f"Then {property_name} 必须被定义"
+    else:
+        then_fallback = f"Then {subject} 必须满足规范断言"
     then_clause = _ensure_prefix(then_clause_raw, "Then ", fallback=then_fallback)
     else_clause = _ensure_prefix(str(item.get("else_clause", "")).strip(), "Else ", fallback="Else 保持默认规则")
 
@@ -664,7 +669,7 @@ def _build_drop_reason(item: dict[str, object], payload_key: str, doc: SourceDoc
     subject = _infer_subject(item, doc, layer)
     if not subject:
         missing_fields.append("subject")
-    if not str(item.get("property_name", "")).strip():
+    if layer == "component" and not str(item.get("property_name", "")).strip():
         missing_fields.append("property_name")
 
     subject_preview = subject or "(empty-subject)"

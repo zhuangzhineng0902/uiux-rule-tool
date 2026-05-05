@@ -8,9 +8,9 @@
 
 | 文件 | 覆盖范围 | 前缀 |
 | --- | --- | --- |
-| `data/foundation-rules.csv` | 基础令牌规范，如颜色、字体、间距、圆角、阴影等 | `FDN` |
+| `data/foundation-rules.csv` | 基础令牌规范，如颜色、字体、间距、圆角、阴影、透明度、边框等 | `FDN` |
 | `data/component-rules.csv` | 组件规范，包含 hover、focus、active、disabled、error、open、selected 等状态完整性 | `CMP` |
-| `data/global-layout-rules.csv` | 全局布局与交互断言，包含响应式行为和页面类型前缀 | `LAY` / `DET` / `LST` / `CRE` / `APV` |
+| `data/global-layout-rules.csv` | 全局布局与交互断言，包含交互行为和页面全局布局 | `LAY` / `DET` / `LST` / `CRE` / `APV` |
 
 CSV 中每一行都必须是原子规则，只描述一个属性。
 
@@ -265,13 +265,14 @@ data/
 - `payload.json`
   模型最终返回并被程序解析后的 JSON。
 - `dropped-rules.json`
-  被过滤掉的规则及原因，例如缺少 `subject`、`property_name`。
+  被过滤掉的规则及原因，例如缺少 `subject`；组件规则缺少 `property_name` 也会被过滤。基础规范和全局规范允许 `property_name` 为空。
 - `meta.json`
   当前文档保留了多少条规则、丢弃了多少条规则，以及是否发生了接口回退。
 
 补充说明：
 
 - `default_value` 允许为空，系统会优先保留规则本身，不会因为 `default_value` 为空就直接过滤掉该规则。
+- `foundation_rules` 和 `global_rules` 的 `property_name` 允许为空，这类规则通常作为语义规范或交互断言保留；`component_rules` 仍需要提供 `property_name`，以便按组件状态进行检查。
 
 结构化 Markdown 目录示例：
 

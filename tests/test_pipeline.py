@@ -68,15 +68,15 @@ class PipelineTest(unittest.TestCase):
 
     def _build_llm_payload_with_dropped_rule(self) -> dict:
         payload = self._build_llm_structured_payload(subject="可写入主色")
-        payload["foundation_rules"].append(
+        payload["component_rules"].append(
             {
-                "page_type": "foundation",
-                "subject": "",
-                "component": "",
+                "page_type": "component",
+                "subject": "button",
+                "component": "button",
                 "state": "default",
                 "property_name": "",
-                "condition_if": "",
-                "then_clause": "Then color 必须为 #FF4D4F",
+                "condition_if": "If 组件 = button",
+                "then_clause": "Then button 必须定义默认态",
                 "else_clause": "Else 保持默认规则",
                 "default_value": "",
                 "preferred_pattern": "使用统一 token",
@@ -214,6 +214,81 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(row.default_value, "")
         self.assertEqual(row.then_clause, "Then 需要提供清晰的 loading 反馈")
 
+    def test_foundation_and_global_rules_can_omit_property_name(self) -> None:
+        doc = SourceDocument(
+            source_type="markdown",
+            location="memory://doc",
+            title="测试文档",
+            text="",
+        )
+        foundation_item = {
+            "page_type": "foundation",
+            "subject": "色彩克制原则",
+            "component": "",
+            "state": "default",
+            "property_name": "",
+            "condition_if": "If 设计企业级产品配色",
+            "then_clause": "Then 色彩使用必须克制",
+            "else_clause": "Else 保持默认规则",
+            "default_value": "",
+            "preferred_pattern": "颜色服务于效率与信息传达",
+            "anti_pattern": "不要让颜色成为主要干扰源",
+            "evidence": "mocked evidence",
+            "source_ref": "memory://doc",
+        }
+        global_item = {
+            "page_type": "list",
+            "subject": "破坏性操作确认",
+            "component": "",
+            "state": "default",
+            "property_name": "",
+            "condition_if": "If 用户触发破坏性操作",
+            "then_clause": "Then 必须先二次确认",
+            "else_clause": "Else 保持默认规则",
+            "default_value": "",
+            "preferred_pattern": "使用二次确认保护",
+            "anti_pattern": "禁止破坏性操作无确认直接提交",
+            "evidence": "mocked evidence",
+            "source_ref": "memory://doc",
+        }
+
+        foundation_row = _coerce_rule(foundation_item, doc, "foundation", "FDN")
+        global_row = _coerce_rule(global_item, doc, "global", "")
+
+        self.assertIsNotNone(foundation_row)
+        self.assertIsNotNone(global_row)
+        assert foundation_row is not None
+        assert global_row is not None
+        self.assertEqual(foundation_row.property_name, "")
+        self.assertEqual(global_row.property_name, "")
+
+    def test_component_rules_still_require_property_name(self) -> None:
+        doc = SourceDocument(
+            source_type="markdown",
+            location="memory://doc",
+            title="测试文档",
+            text="",
+        )
+        item = {
+            "page_type": "component",
+            "subject": "button",
+            "component": "button",
+            "state": "default",
+            "property_name": "",
+            "condition_if": "If 组件 = button",
+            "then_clause": "Then 按钮必须有默认态",
+            "else_clause": "",
+            "default_value": "",
+            "preferred_pattern": "",
+            "anti_pattern": "",
+            "evidence": "mocked evidence",
+            "source_ref": "",
+        }
+
+        row = _coerce_rule(item, doc, "component", "CMP")
+
+        self.assertIsNone(row)
+
     def test_llm_rule_is_dropped_when_required_fields_are_missing(self) -> None:
         doc = SourceDocument(
             source_type="markdown",
@@ -222,13 +297,13 @@ class PipelineTest(unittest.TestCase):
             text="",
         )
         item = {
-            "page_type": "foundation",
-            "subject": "",
-            "component": "",
+            "page_type": "component",
+            "subject": "button",
+            "component": "button",
             "state": "default",
             "property_name": "",
-            "condition_if": "",
-            "then_clause": "Then color 必须为 #1677FF",
+            "condition_if": "If 组件 = button",
+            "then_clause": "Then button 必须定义默认态",
             "else_clause": "",
             "default_value": "",
             "preferred_pattern": "",
@@ -237,7 +312,7 @@ class PipelineTest(unittest.TestCase):
             "source_ref": "",
         }
 
-        row = _coerce_rule(item, doc, "foundation", "FDN")
+        row = _coerce_rule(item, doc, "component", "CMP")
 
         self.assertIsNone(row)
 
