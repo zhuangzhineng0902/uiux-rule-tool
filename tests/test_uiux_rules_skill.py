@@ -16,7 +16,6 @@ CSV_COLUMNS = [
     "rule_id",
     "prefix",
     "layer",
-    "page_type",
     "subject",
     "component",
     "state",
@@ -28,7 +27,6 @@ CSV_COLUMNS = [
     "preferred_pattern",
     "anti_pattern",
     "evidence",
-    "source_ref",
 ]
 
 

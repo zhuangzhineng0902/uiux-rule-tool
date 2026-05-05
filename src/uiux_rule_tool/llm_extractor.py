@@ -315,7 +315,7 @@ def _build_instructions() -> str:
         "6. 必须寻找禁止项，并写入 anti_pattern。"
         "7. 仅输出有明确证据支持的规则；没有证据就不要猜。"
         "8. 所有字段都必须返回字符串；不适用时返回空字符串。"
-        "9. source_ref 必须使用输入文档的 location；evidence 必须是简短证据摘要，不要长段复制。"
+        "9. evidence 必须是简短证据摘要，不要长段复制。"
         "10. 如果输入文档限定了层级，只输出该层级数组，其余层级返回空数组。"
         "11. 文档中只要出现具体的颜色值、像素值、百分比、字号、行高、圆角、阴影、间距等明确数值，请总结为规则。"
         "12. 如果文档中出现以下措辞或同义表达，请优先总结为规则：必须、禁止、避免、建议、应该、最多只能、当...时、少于或等于、不超过、间距、等分。"
@@ -436,7 +436,6 @@ def _rule_schema() -> dict[str, object]:
         "type": "object",
         "additionalProperties": False,
         "required": [
-            "page_type",
             "subject",
             "component",
             "state",
@@ -448,10 +447,8 @@ def _rule_schema() -> dict[str, object]:
             "preferred_pattern",
             "anti_pattern",
             "evidence",
-            "source_ref",
         ],
         "properties": {
-            "page_type": {"type": "string"},
             "subject": {"type": "string"},
             "component": {"type": "string"},
             "state": {"type": "string"},
@@ -463,7 +460,6 @@ def _rule_schema() -> dict[str, object]:
             "preferred_pattern": {"type": "string"},
             "anti_pattern": {"type": "string"},
             "evidence": {"type": "string"},
-            "source_ref": {"type": "string"},
         },
     }
     return {

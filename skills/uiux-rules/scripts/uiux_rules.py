@@ -250,7 +250,6 @@ def format_rule(rule: Rule) -> dict[str, str]:
     fields = [
         "rule_id",
         "layer",
-        "page_type",
         "subject",
         "component",
         "state",
@@ -262,7 +261,6 @@ def format_rule(rule: Rule) -> dict[str, str]:
         "preferred_pattern",
         "anti_pattern",
         "evidence",
-        "source_ref",
     ]
     return {field: rule.row.get(field, "") for field in fields}
 
