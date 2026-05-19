@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
+from urllib.parse import urlparse
 
 MARKDOWN_BUCKET_ALIASES = {
     "foundation-rules": "foundation",
@@ -26,6 +28,7 @@ CSV_COLUMNS = [
     "preferred_pattern",
     "anti_pattern",
     "evidence",
+    "source_ref",
 ]
 
 COMPONENT_KEYWORDS = {
@@ -157,4 +160,21 @@ class RuleRow:
     rule_id: str = ""
 
     def to_row(self) -> dict[str, str]:
-        return {column: getattr(self, column) for column in CSV_COLUMNS}
+        row = {column: getattr(self, column) for column in CSV_COLUMNS}
+        row["source_ref"] = shorten_source_ref(row["source_ref"])
+        return row
+
+
+def shorten_source_ref(value: str) -> str:
+    source = (value or "").strip()
+    if not source:
+        return ""
+    if source.startswith("tool:"):
+        return source
+
+    parsed = urlparse(source)
+    if parsed.scheme and parsed.netloc:
+        path_name = Path(parsed.path.rstrip("/")).name
+        return path_name or parsed.netloc
+
+    return Path(source).name or source

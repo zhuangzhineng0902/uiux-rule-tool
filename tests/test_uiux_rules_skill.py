@@ -27,9 +27,11 @@ CSV_COLUMNS = [
     "preferred_pattern",
     "anti_pattern",
     "evidence",
+    "source_ref",
 ]
 
 
+@unittest.skipUnless(SCRIPT.exists(), "uiux-rules skill script is not present in this checkout")
 class UIUXRulesSkillTest(unittest.TestCase):
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

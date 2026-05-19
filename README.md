@@ -34,6 +34,7 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 - `preferred_pattern`
 - `anti_pattern`
 - `evidence`
+- `source_ref`
 
 和需求直接对应的关键字段有：
 
@@ -41,6 +42,8 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 - `default_value`
 - `preferred_pattern`
 - `anti_pattern`
+
+`source_ref` 只保留来源 Markdown 文件名，例如 `sample-guidelines.md`，不写完整本地路径；非 Markdown 的内置来源会保留短标识。
 
 ## 主要能力
 

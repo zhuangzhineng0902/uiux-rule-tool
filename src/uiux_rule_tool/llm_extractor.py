@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .config import AppConfig, DEFAULT_LLM_MODEL
-from .models import RuleRow, SourceDocument
+from .models import RuleRow, SourceDocument, shorten_source_ref
 
 PAGE_TYPE_TO_PREFIX = {
     "layout": "LAY",
@@ -532,7 +532,7 @@ def _coerce_rule(item: dict[str, object], doc: SourceDocument, layer: str, fixed
     else_clause = _ensure_prefix(str(item.get("else_clause", "")).strip(), "Else ", fallback="Else 保持默认规则")
 
     prefix = fixed_prefix or PAGE_TYPE_TO_PREFIX.get(page_type, "LAY")
-    source_ref = str(item.get("source_ref", "")).strip() or doc.location
+    source_ref = shorten_source_ref(doc.location)
 
     return RuleRow(
         prefix=prefix,
