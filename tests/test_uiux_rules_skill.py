@@ -14,8 +14,6 @@ SCRIPT = ROOT / "skills" / "uiux-rules" / "scripts" / "uiux_rules.py"
 RULES_DIR = ROOT / "data"
 CSV_COLUMNS = [
     "rule_id",
-    "prefix",
-    "layer",
     "subject",
     "component",
     "state",
@@ -68,12 +66,11 @@ class UIUXRulesSkillTest(unittest.TestCase):
         )
 
         rows = json.loads(result.stdout)
-        layers = {row["layer"] for row in rows}
         components = {row["component"] for row in rows if row["component"]}
+        rule_ids = {row["rule_id"] for row in rows}
 
-        self.assertIn("foundation", layers)
-        self.assertIn("global", layers)
-        self.assertIn("component", layers)
+        self.assertTrue(any(rule_id.startswith("FDN-") for rule_id in rule_ids))
+        self.assertTrue(any(rule_id.startswith(("LAY-", "DET-", "LST-", "CRE-", "APV-")) for rule_id in rule_ids))
         self.assertIn("button", components)
         self.assertNotIn("input", components)
 
@@ -101,7 +98,7 @@ class UIUXRulesSkillTest(unittest.TestCase):
         self.assertIn("CMP-003", ids)
         self.assertIn("CMP-007", ids)
         self.assertIn("LST-002", ids)
-        self.assertFalse(any(item["layer"] == "foundation" for item in violations))
+        self.assertFalse(any(item["rule_id"].startswith("FDN-") for item in violations))
         self.assertTrue(any(item["line"] == 1 for item in violations))
 
     def test_scan_project_expands_layout_shorthand_and_skips_interaction_assertions(self) -> None:
@@ -142,9 +139,6 @@ class UIUXRulesSkillTest(unittest.TestCase):
                 [
                     {
                         "rule_id": "FDN-SPACE",
-                        "prefix": "FDN",
-                        "layer": "foundation",
-                        "page_type": "foundation",
                         "subject": "间距令牌",
                         "state": "default",
                         "property_name": "spacing",
@@ -186,9 +180,6 @@ class UIUXRulesSkillTest(unittest.TestCase):
                 [
                     {
                         "rule_id": "FDN-EMPTY",
-                        "prefix": "FDN",
-                        "layer": "foundation",
-                        "page_type": "foundation",
                         "subject": "色彩克制原则",
                         "state": "default",
                         "property_name": "",
@@ -202,9 +193,6 @@ class UIUXRulesSkillTest(unittest.TestCase):
                 [
                     {
                         "rule_id": "LAY-EMPTY",
-                        "prefix": "LAY",
-                        "layer": "global",
-                        "page_type": "list",
                         "subject": "破坏性操作确认",
                         "state": "default",
                         "property_name": "",

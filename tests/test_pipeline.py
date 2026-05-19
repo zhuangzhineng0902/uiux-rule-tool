@@ -812,7 +812,7 @@ class PipelineTest(unittest.TestCase):
             self.assertTrue(any(row["subject"] == "Primary color" for row in foundation_rows))
             self.assertFalse(any(row["subject"] == "button" for row in foundation_rows))
             self.assertTrue(any(row["subject"] == "button" and row["state"] == "hover" for row in component_rows))
-            self.assertFalse(any(row["prefix"] == "CMP" for row in global_rows))
+            self.assertFalse(any(row["rule_id"].startswith("CMP-") for row in global_rows))
             self.assertTrue(any("屏幕宽度 < 600px" in row["condition_if"] for row in global_rows))
 
     def test_non_markdown_file_is_rejected(self) -> None:

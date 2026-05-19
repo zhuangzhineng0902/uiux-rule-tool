@@ -6,7 +6,7 @@
 
 生成后的 CSV 是唯一事实来源：
 
-| 文件 | 覆盖范围 | 前缀 |
+| 文件 | 覆盖范围 | `rule_id` 前缀 |
 | --- | --- | --- |
 | `data/foundation-rules.csv` | 基础令牌规范，如颜色、字体、间距、圆角、阴影、透明度、边框等 | `FDN` |
 | `data/component-rules.csv` | 组件规范，包含 hover、focus、active、disabled、error、open、selected 等状态完整性 | `CMP` |
@@ -21,8 +21,6 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 每条 CSV 规则包含以下字段：
 
 - `rule_id`
-- `prefix`
-- `layer`
 - `subject`
 - `component`
 - `state`

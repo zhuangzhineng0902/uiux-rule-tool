@@ -15,8 +15,6 @@ MARKDOWN_BUCKET_ALIASES = {
 
 CSV_COLUMNS = [
     "rule_id",
-    "prefix",
-    "layer",
     "subject",
     "component",
     "state",
