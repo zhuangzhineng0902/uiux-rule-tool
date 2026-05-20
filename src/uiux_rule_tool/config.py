@@ -12,6 +12,7 @@ DEFAULT_EXTRACTOR = "auto"
 DEFAULT_INPUT_SOURCE = ""
 DEFAULT_OUTPUT_DIR = "data"
 DEFAULT_RUN_MODE = "full"
+DEFAULT_REPEAT_COUNT = 1
 SUPPORTED_RUN_MODES = {"full", "rerun_dropped"}
 
 
@@ -41,6 +42,7 @@ class OutputConfig:
 @dataclass(slots=True)
 class RunConfig:
     mode: str = DEFAULT_RUN_MODE
+    repeat_count: int = DEFAULT_REPEAT_COUNT
 
 
 @dataclass(slots=True)
@@ -80,6 +82,7 @@ def load_app_config(config_path: str | None = None) -> AppConfig:
     )
     run_config = RunConfig(
         mode=_normalize_run_mode(str(run_payload.get("mode", DEFAULT_RUN_MODE)).strip() or DEFAULT_RUN_MODE),
+        repeat_count=_coerce_repeat_count(run_payload.get("repeat_count", DEFAULT_REPEAT_COUNT)),
     )
 
     return AppConfig(
@@ -117,3 +120,13 @@ def _normalize_run_mode(value: str) -> str:
         allowed = " | ".join(sorted(SUPPORTED_RUN_MODES))
         raise ValueError(f"不支持的运行模式：{value}。可选值为 {allowed}。")
     return normalized
+
+
+def _coerce_repeat_count(value: object) -> int:
+    try:
+        repeat_count = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"不支持的重复运行次数：{value}。repeat_count 必须是大于等于 1 的整数。") from exc
+    if repeat_count < 1:
+        raise ValueError(f"不支持的重复运行次数：{value}。repeat_count 必须是大于等于 1 的整数。")
+    return repeat_count

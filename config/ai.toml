@@ -10,6 +10,8 @@ directory = "data"
 [run]
 # 可选值: full | rerun_dropped
 mode = "full"
+# 重复运行次数，必须 >= 1。多次运行的结果会自动合并去重。
+repeat_count = 1
 
 # OpenAI 相关配置
 [openai]

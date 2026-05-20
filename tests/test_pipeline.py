@@ -808,16 +808,18 @@ class PipelineTest(unittest.TestCase):
             config_path = Path(temp_dir) / "ai.toml"
             config_path.write_text(
                 f'[output]\ndirectory = "{output_dir}"\n\n'
-                '[run]\nmode = "rerun_dropped"\n\n'
+                '[run]\nmode = "rerun_dropped"\nrepeat_count = 2\n\n'
                 '[openai]\napi_key = "test-key"\nbase_url = "https://example.com/v1"\nmodel = "gpt-5.4-mini"\n',
                 encoding="utf-8",
             )
 
-            with patch("uiux_rule_tool.cli.extract_dropped_rules_with_llm", return_value=[]):
+            with patch("uiux_rule_tool.cli.extract_dropped_rules_with_llm", return_value=[]) as rerun_mock:
                 result = run(None, config_path=str(config_path))
 
             self.assertIn("rerun_dropped_rules", result)
             self.assertEqual(result["documents"], 1)
+            self.assertEqual(result["repeat_count"], 2)
+            self.assertEqual(rerun_mock.call_count, 2)
 
     def test_remote_url_from_config_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -865,6 +867,100 @@ class PipelineTest(unittest.TestCase):
 
             self.assertTrue(any(row["subject"] == "Primary color" for row in foundation_rows))
             self.assertTrue(any("屏幕宽度 < 600px" in row["condition_if"] for row in global_rows))
+
+    def test_full_runs_merge_with_existing_csv_results(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_dir = Path(temp_dir) / "docs"
+            docs_dir.mkdir()
+            first_file = docs_dir / "tokens.md"
+            second_file = docs_dir / "layout.md"
+            first_file.write_text("# Tokens\n\n- Primary color: #0067D1\n", encoding="utf-8")
+            second_file.write_text(
+                "# Layout\n\n如果 屏幕宽度 < 600px，则 底部操作栏 必须 撑满全屏（100% width）。\n",
+                encoding="utf-8",
+            )
+
+            output_dir = Path(temp_dir) / "out"
+            first_result = run(str(first_file), output_dir=str(output_dir), extractor="heuristic")
+            second_result = run(str(second_file), output_dir=str(output_dir), extractor="heuristic")
+
+            self.assertGreater(first_result["foundation_rules"], 0)
+            self.assertGreater(second_result["foundation_rules"], 0)
+            self.assertGreater(second_result["global_rules"], 0)
+
+            with (output_dir / "foundation-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                foundation_rows = list(csv.DictReader(handle))
+            with (output_dir / "global-layout-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                global_rows = list(csv.DictReader(handle))
+
+            self.assertTrue(any(row["subject"] == "Primary color" for row in foundation_rows))
+            self.assertTrue(any("屏幕宽度 < 600px" in row["condition_if"] for row in global_rows))
+
+    def test_config_repeat_count_runs_full_pipeline_multiple_times(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            markdown_path = Path(temp_dir) / "tokens.md"
+            markdown_path.write_text("# Tokens\n\n- Primary color: #0067D1\n", encoding="utf-8")
+            output_dir = Path(temp_dir) / "out"
+            config_path = Path(temp_dir) / "ai.toml"
+            config_path.write_text(
+                f'[input]\nsources = ["{markdown_path}"]\n\n'
+                f'[output]\ndirectory = "{output_dir}"\n\n'
+                '[run]\nmode = "full"\nrepeat_count = 3\n\n'
+                '[extraction]\nstrategy = "heuristic"\n',
+                encoding="utf-8",
+            )
+
+            processed_locations: list[str] = []
+
+            def fake_generate(documents, **_kwargs):
+                processed_locations.append(documents[0].location)
+                return [
+                    RuleRow(
+                        prefix="FDN",
+                        layer="foundation",
+                        page_type="foundation",
+                        subject=f"run-{len(processed_locations)}",
+                        component="",
+                        state="default",
+                        property_name="color",
+                        condition_if=f"If 运行次数 = {len(processed_locations)}",
+                        then_clause="Then color 必须使用登记值",
+                        else_clause="Else 保持默认规则",
+                        default_value="#0067D1",
+                        preferred_pattern="使用统一 token",
+                        anti_pattern="禁止硬编码相近颜色",
+                        evidence="Primary color: #0067D1",
+                        source_ref=str(markdown_path),
+                    )
+                ]
+
+            with patch("uiux_rule_tool.cli._generate_non_official_rules", side_effect=fake_generate):
+                result = run(None, config_path=str(config_path))
+
+            self.assertEqual(result["repeat_count"], 3)
+            self.assertEqual(len(processed_locations), 3)
+            self.assertEqual(result["foundation_rules"], 3)
+
+            with (output_dir / "foundation-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                foundation_rows = list(csv.DictReader(handle))
+
+            self.assertEqual([row["subject"] for row in foundation_rows], ["run-1", "run-2", "run-3"])
+
+    def test_repeated_full_runs_dedupe_existing_csv_results(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            markdown_path = Path(temp_dir) / "tokens.md"
+            markdown_path.write_text("# Tokens\n\n- Primary color: #0067D1\n", encoding="utf-8")
+            output_dir = Path(temp_dir) / "out"
+
+            run(str(markdown_path), output_dir=str(output_dir), extractor="heuristic")
+            with (output_dir / "foundation-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                first_rows = list(csv.DictReader(handle))
+
+            run(str(markdown_path), output_dir=str(output_dir), extractor="heuristic")
+            with (output_dir / "foundation-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                second_rows = list(csv.DictReader(handle))
+
+            self.assertEqual(len(second_rows), len(first_rows))
 
     def test_run_resumes_from_last_completed_file_after_interruption(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1206,7 +1302,7 @@ class PipelineTest(unittest.TestCase):
             config_path.write_text(
                 '[input]\nsources = ["./docs"]\n\n'
                 '[output]\ndirectory = "./exports"\n\n'
-                '[run]\nmode = "rerun_dropped"\n\n'
+                '[run]\nmode = "rerun_dropped"\nrepeat_count = 3\n\n'
                 '[openai]\napi_key = "demo-key"\nbase_url = "https://example.com/v1"\nmodel = "gpt-5.4-mini"\napi_style = "chat_completions"\n\n'
                 '[extraction]\nstrategy = "llm"\n',
                 encoding="utf-8",
@@ -1222,6 +1318,7 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(config.openai.api_style, "chat_completions")
             self.assertEqual(config.extraction.strategy, "llm")
             self.assertEqual(config.run.mode, "rerun_dropped")
+            self.assertEqual(config.run.repeat_count, 3)
 
     def test_legacy_single_input_source_is_still_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

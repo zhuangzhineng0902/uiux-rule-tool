@@ -73,6 +73,7 @@ directory = "./data"
 
 [run]
 mode = "full"
+repeat_count = 1
 
 [openai]
 api_key = ""
@@ -87,9 +88,11 @@ strategy = "auto"
 `[run].mode` 当前支持以下枚举值：
 
 - `full`
-  默认值。执行全量抽取，按输入源重新解析 Markdown 并生成三类 CSV。
+  默认值。执行全量抽取，按输入源重新解析 Markdown，并与输出目录中已有的三类 CSV 自动合并、去重、重新编号。
 - `rerun_dropped`
   只扫描输出目录下已有的 `debug/**/dropped-rules.json`，重跑上一轮被过滤的候选规则，并与现有 CSV 合并。
+
+`[run].repeat_count` 用于配置重复运行次数，必须是大于等于 1 的整数。无论是 `full` 还是 `rerun_dropped`，多次运行的结果都会自动合并、去重、重新编号。这个配置适合让 LLM 多次抽取或多次修复 dropped-rules，以累积每轮新增的有效规则。
 
 当 `config/ai.toml` 里已经配置好 `input.sources` 和 `output.directory` 后，可以直接无参运行：
 
@@ -314,6 +317,7 @@ docs/
 - `--input`、`--output-dir` 都是可选覆盖项；如果不传，会从 `config/ai.toml` 中读取 `input.sources`、`output.directory`。
 - `[run].mode = "rerun_dropped"` 时，可以不配置 `input.sources`，程序会直接从输出目录的 debug 文件中重跑 dropped-rules；命令行 `--rerun-dropped` 可临时覆盖运行模式。
 - 当前版本只支持本地 Markdown 文件和目录输入，不支持网站 URL。
+- 多次运行会自动读取输出目录中已有的 CSV 并合并新结果；同一规则会按规则内容去重，不会因为重复运行同一输入而持续膨胀。
 - 为了兼容旧配置，`input.source` 仍然可用，但推荐统一使用 `input.sources`。
 - 在 `auto` 模式下，如果 `config/ai.toml` 中配置了 `openai.api_key`，会优先使用 OpenAI Responses API 的结构化输出；否则自动回退到启发式抽取器。
 - `openai.api_style = "auto"` 时，会优先走 `Responses API`，失败后自动尝试兼容 OpenAI 的 `Chat Completions API`。

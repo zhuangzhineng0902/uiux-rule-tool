@@ -51,10 +51,36 @@ def run(
             output_dir=selected_output_dir,
             app_config=app_config,
             llm_model=llm_model,
+            repeat_count=app_config.run.repeat_count,
         )
 
     selected_inputs = _resolve_input_values(input_value, app_config)
     selected_extractor = extractor or app_config.extraction.strategy
+    result: dict[str, int | str] = {}
+    for run_index in range(1, app_config.run.repeat_count + 1):
+        result = _run_full_once(
+            selected_inputs=selected_inputs,
+            selected_output_dir=selected_output_dir,
+            selected_extractor=selected_extractor,
+            llm_model=llm_model,
+            app_config=app_config,
+            run_index=run_index,
+            repeat_count=app_config.run.repeat_count,
+        )
+    return result
+
+
+def _run_full_once(
+    selected_inputs: list[str],
+    selected_output_dir: str,
+    selected_extractor: str,
+    llm_model: str | None,
+    app_config,
+    run_index: int,
+    repeat_count: int,
+) -> dict[str, int | str]:
+    if repeat_count > 1:
+        print(f"[uiux-rule-tool] 开始第 {run_index}/{repeat_count} 次运行", file=sys.stderr)
     resume_signature = _build_resume_signature(selected_inputs, selected_extractor, llm_model)
     resume_path = _resume_checkpoint_path(selected_output_dir)
     completed_locations, rules = _load_resume_checkpoint(resume_path, resume_signature)
@@ -86,7 +112,7 @@ def run(
         completed_locations.add(normalized_location)
         _write_resume_checkpoint(resume_path, resume_signature, completed_locations, rules)
 
-    rules = dedupe_rules(rules)
+    rules = _merge_with_existing_csv_rules(selected_output_dir, rules)
     assign_rule_ids(rules)
     write_csvs(rules, selected_output_dir)
     _clear_resume_checkpoint(resume_path)
@@ -97,28 +123,35 @@ def run(
         "foundation_rules": counter.get("FDN", 0),
         "component_rules": counter.get("CMP", 0),
         "global_rules": sum(count for prefix, count in counter.items() if prefix not in {"FDN", "CMP"}),
+        "repeat_count": repeat_count,
         "output_dir": selected_output_dir,
     }
 
 
-def _rerun_dropped_rules(output_dir: str, app_config, llm_model: str | None) -> dict[str, int]:
+def _rerun_dropped_rules(output_dir: str, app_config, llm_model: str | None, repeat_count: int) -> dict[str, int | str]:
     debug_root = Path(output_dir) / "debug"
     dropped_docs = _load_dropped_rule_documents(debug_root)
     if not dropped_docs:
         print(f"[uiux-rule-tool] 未找到可重跑的 dropped-rules：{debug_root}", file=sys.stderr)
 
     recovered_rules: list[RuleRow] = []
-    if dropped_docs:
-        recovered_rules = extract_dropped_rules_with_llm(
-            dropped_docs,
-            config=app_config,
-            model=resolve_llm_model(app_config, llm_model),
-            debug_dir=str(debug_root / "rerun-dropped"),
-        )
+    for run_index in range(1, repeat_count + 1):
+        if repeat_count > 1:
+            print(f"[uiux-rule-tool] 开始第 {run_index}/{repeat_count} 次 dropped-rules 重跑", file=sys.stderr)
+        if dropped_docs:
+            rerun_debug_dir = debug_root / "rerun-dropped"
+            if repeat_count > 1:
+                rerun_debug_dir = rerun_debug_dir / f"run-{run_index:03d}"
+            recovered_rules.extend(
+                extract_dropped_rules_with_llm(
+                    dropped_docs,
+                    config=app_config,
+                    model=resolve_llm_model(app_config, llm_model),
+                    debug_dir=str(rerun_debug_dir),
+                )
+            )
 
-    rules = _read_existing_csv_rules(output_dir)
-    rules.extend(recovered_rules)
-    rules = dedupe_rules(rules)
+    rules = _merge_with_existing_csv_rules(output_dir, recovered_rules)
     assign_rule_ids(rules)
     write_csvs(rules, output_dir)
 
@@ -129,6 +162,7 @@ def _rerun_dropped_rules(output_dir: str, app_config, llm_model: str | None) -> 
         "component_rules": counter.get("CMP", 0),
         "global_rules": sum(count for prefix, count in counter.items() if prefix not in {"FDN", "CMP"}),
         "rerun_dropped_rules": len(recovered_rules),
+        "repeat_count": repeat_count,
         "output_dir": output_dir,
     }
 
@@ -270,6 +304,12 @@ def _read_existing_csv_rules(output_dir: str) -> list[RuleRow]:
                 )
 
     return rows
+
+
+def _merge_with_existing_csv_rules(output_dir: str, new_rules: list[RuleRow]) -> list[RuleRow]:
+    rules = _read_existing_csv_rules(output_dir)
+    rules.extend(new_rules)
+    return dedupe_rules(rules)
 
 
 def _resume_checkpoint_path(output_dir: str) -> Path:
@@ -440,6 +480,7 @@ def main() -> int:
     print(f"foundation_rules={result['foundation_rules']}")
     print(f"component_rules={result['component_rules']}")
     print(f"global_rules={result['global_rules']}")
+    print(f"repeat_count={result.get('repeat_count', 1)}")
     if "rerun_dropped_rules" in result:
         print(f"rerun_dropped_rules={result['rerun_dropped_rules']}")
     print(f"output_dir={result['output_dir']}")
