@@ -11,6 +11,8 @@ DEFAULT_OPENAI_API_STYLE = "auto"
 DEFAULT_EXTRACTOR = "auto"
 DEFAULT_INPUT_SOURCE = ""
 DEFAULT_OUTPUT_DIR = "data"
+DEFAULT_RUN_MODE = "full"
+SUPPORTED_RUN_MODES = {"full", "rerun_dropped"}
 
 
 @dataclass(slots=True)
@@ -37,11 +39,17 @@ class OutputConfig:
 
 
 @dataclass(slots=True)
+class RunConfig:
+    mode: str = DEFAULT_RUN_MODE
+
+
+@dataclass(slots=True)
 class AppConfig:
     openai: OpenAIConfig
     extraction: ExtractionConfig
     input: InputConfig
     output: OutputConfig
+    run: RunConfig
     config_path: str
 
 
@@ -53,6 +61,7 @@ def load_app_config(config_path: str | None = None) -> AppConfig:
     extraction_payload = payload.get("extraction", {})
     input_payload = payload.get("input", {})
     output_payload = payload.get("output", {})
+    run_payload = payload.get("run", {})
 
     openai = OpenAIConfig(
         api_key=str(openai_payload.get("api_key", "")).strip(),
@@ -69,12 +78,16 @@ def load_app_config(config_path: str | None = None) -> AppConfig:
     output_config = OutputConfig(
         directory=str(output_payload.get("directory", DEFAULT_OUTPUT_DIR)).strip() or DEFAULT_OUTPUT_DIR,
     )
+    run_config = RunConfig(
+        mode=_normalize_run_mode(str(run_payload.get("mode", DEFAULT_RUN_MODE)).strip() or DEFAULT_RUN_MODE),
+    )
 
     return AppConfig(
         openai=openai,
         extraction=extraction,
         input=input_config,
         output=output_config,
+        run=run_config,
         config_path=str(resolved),
     )
 
@@ -96,3 +109,11 @@ def _coerce_sources(payload: dict) -> list[str]:
 
     single_value = str(payload.get("source", DEFAULT_INPUT_SOURCE)).strip()
     return [single_value] if single_value else []
+
+
+def _normalize_run_mode(value: str) -> str:
+    normalized = value.strip().replace("-", "_")
+    if normalized not in SUPPORTED_RUN_MODES:
+        allowed = " | ".join(sorted(SUPPORTED_RUN_MODES))
+        raise ValueError(f"不支持的运行模式：{value}。可选值为 {allowed}。")
+    return normalized

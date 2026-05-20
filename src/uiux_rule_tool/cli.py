@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 from collections import Counter
@@ -11,9 +12,15 @@ import sys
 from .config import DEFAULT_CONFIG_PATH, load_app_config
 from .extractors import dedupe_rules, generate_rules
 from .ingest import load_documents
-from .llm_extractor import LLMExtractorError, can_use_openai_llm, extract_rules_with_llm, resolve_llm_model
-from .models import RuleRow
-from .writer import assign_rule_ids, write_csvs
+from .llm_extractor import (
+    LLMExtractorError,
+    can_use_openai_llm,
+    extract_dropped_rules_with_llm,
+    extract_rules_with_llm,
+    resolve_llm_model,
+)
+from .models import RuleRow, SourceDocument
+from .writer import CSV_FILE_ENCODING, assign_rule_ids, write_csvs
 
 RESUME_STATE_VERSION = 1
 
@@ -33,10 +40,20 @@ def run(
     extractor: str | None = None,
     llm_model: str | None = None,
     config_path: str | None = None,
+    rerun_dropped: bool | None = None,
 ) -> dict[str, int]:
     app_config = load_app_config(config_path)
-    selected_inputs = _resolve_input_values(input_value, app_config)
     selected_output_dir = (output_dir or "").strip() or app_config.output.directory
+    should_rerun_dropped = rerun_dropped if rerun_dropped is not None else app_config.run.mode == "rerun_dropped"
+
+    if should_rerun_dropped:
+        return _rerun_dropped_rules(
+            output_dir=selected_output_dir,
+            app_config=app_config,
+            llm_model=llm_model,
+        )
+
+    selected_inputs = _resolve_input_values(input_value, app_config)
     selected_extractor = extractor or app_config.extraction.strategy
     resume_signature = _build_resume_signature(selected_inputs, selected_extractor, llm_model)
     resume_path = _resume_checkpoint_path(selected_output_dir)
@@ -84,6 +101,38 @@ def run(
     }
 
 
+def _rerun_dropped_rules(output_dir: str, app_config, llm_model: str | None) -> dict[str, int]:
+    debug_root = Path(output_dir) / "debug"
+    dropped_docs = _load_dropped_rule_documents(debug_root)
+    if not dropped_docs:
+        print(f"[uiux-rule-tool] 未找到可重跑的 dropped-rules：{debug_root}", file=sys.stderr)
+
+    recovered_rules: list[RuleRow] = []
+    if dropped_docs:
+        recovered_rules = extract_dropped_rules_with_llm(
+            dropped_docs,
+            config=app_config,
+            model=resolve_llm_model(app_config, llm_model),
+            debug_dir=str(debug_root / "rerun-dropped"),
+        )
+
+    rules = _read_existing_csv_rules(output_dir)
+    rules.extend(recovered_rules)
+    rules = dedupe_rules(rules)
+    assign_rule_ids(rules)
+    write_csvs(rules, output_dir)
+
+    counter = Counter(row.prefix for row in rules)
+    return {
+        "documents": len(dropped_docs),
+        "foundation_rules": counter.get("FDN", 0),
+        "component_rules": counter.get("CMP", 0),
+        "global_rules": sum(count for prefix, count in counter.items() if prefix not in {"FDN", "CMP"}),
+        "rerun_dropped_rules": len(recovered_rules),
+        "output_dir": output_dir,
+    }
+
+
 def _resolve_input_values(input_value: str | list[str] | None, app_config) -> list[str]:
     if isinstance(input_value, list):
         selected_inputs = [item.strip() for item in input_value if item and item.strip()]
@@ -106,6 +155,121 @@ def _resolve_input_values(input_value: str | list[str] | None, app_config) -> li
 
 def _is_remote_source(value: str) -> bool:
     return value.startswith("http://") or value.startswith("https://")
+
+
+def _load_dropped_rule_documents(debug_root: Path) -> list[SourceDocument]:
+    if not debug_root.exists():
+        return []
+
+    documents: list[SourceDocument] = []
+    for dropped_path in sorted(debug_root.rglob("dropped-rules.json")):
+        if "rerun-dropped" in dropped_path.parts:
+            continue
+        try:
+            entries = _load_dropped_rule_entries(dropped_path)
+        except Exception as exc:
+            raise RuntimeError(f"解析 dropped-rules 文件失败：{dropped_path}：{exc}") from exc
+        if not entries:
+            continue
+
+        meta = _load_json_file(dropped_path.parent / "meta.json")
+        location = str(meta.get("location", dropped_path.parent))
+        title = str(meta.get("title", dropped_path.parent.name))
+        source_bucket = str(meta.get("source_bucket", ""))
+        text = json.dumps(
+            {
+                "source_debug_dir": str(dropped_path.parent),
+                "source_location": location,
+                "dropped_rules": entries,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        documents.append(
+            SourceDocument(
+                source_type="dropped-rules",
+                location=location,
+                title=f"{title} dropped-rules 重跑",
+                text=text,
+                source_bucket=source_bucket,
+            )
+        )
+
+    return documents
+
+
+def _load_dropped_rule_entries(dropped_path: Path) -> list[dict[str, object]]:
+    payload = _load_json_file(dropped_path)
+    detailed_items = payload.get("dropped_rule_items")
+    if isinstance(detailed_items, list) and detailed_items:
+        return [item for item in detailed_items if isinstance(item, dict)]
+
+    adjacent_payload = _load_json_file(dropped_path.parent / "payload.json")
+    meta = _load_json_file(dropped_path.parent / "meta.json")
+    doc = SourceDocument(
+        source_type=str(meta.get("source_type", "markdown")),
+        location=str(meta.get("location", dropped_path.parent)),
+        title=str(meta.get("title", dropped_path.parent.name)),
+        text="",
+        source_bucket=str(meta.get("source_bucket", "")),
+    )
+    return _derive_dropped_rule_entries(adjacent_payload, doc)
+
+
+def _derive_dropped_rule_entries(payload: dict[str, object], doc: SourceDocument) -> list[dict[str, object]]:
+    from .llm_extractor import _dropped_rule_details
+
+    return _dropped_rule_details(payload, doc)
+
+
+def _load_json_file(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def _read_existing_csv_rules(output_dir: str) -> list[RuleRow]:
+    target = Path(output_dir)
+    specs = [
+        ("foundation-rules.csv", "FDN", "foundation", "foundation"),
+        ("component-rules.csv", "CMP", "component", "component"),
+        ("global-layout-rules.csv", "", "global", "layout"),
+    ]
+    rows: list[RuleRow] = []
+
+    for filename, default_prefix, layer, page_type in specs:
+        path = target / filename
+        if not path.exists():
+            continue
+        with path.open(encoding=CSV_FILE_ENCODING) as handle:
+            for item in csv.DictReader(handle):
+                rule_id = str(item.get("rule_id", ""))
+                prefix = default_prefix
+                if not prefix and "-" in rule_id:
+                    prefix = rule_id.split("-", 1)[0]
+                rows.append(
+                    RuleRow(
+                        prefix=prefix or "LAY",
+                        layer=layer,
+                        page_type=page_type,
+                        subject=str(item.get("subject", "")),
+                        component=str(item.get("component", "")),
+                        state=str(item.get("state", "")) or "default",
+                        property_name=str(item.get("property_name", "")),
+                        condition_if=str(item.get("condition_if", "")),
+                        then_clause=str(item.get("then_clause", "")),
+                        else_clause=str(item.get("else_clause", "")),
+                        default_value=str(item.get("default_value", "")),
+                        preferred_pattern=str(item.get("preferred_pattern", "")),
+                        anti_pattern=str(item.get("anti_pattern", "")),
+                        evidence=str(item.get("evidence", "")),
+                        source_ref=str(item.get("source_ref", "")),
+                        rule_id=rule_id,
+                    )
+                )
+
+    return rows
 
 
 def _resume_checkpoint_path(output_dir: str) -> Path:
@@ -252,6 +416,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="可选 OpenAI 模型覆盖项。默认读取配置文件中的模型配置。",
     )
+    parser.add_argument(
+        "--rerun-dropped",
+        action="store_true",
+        default=None,
+        help="只重跑输出目录 debug 中的 dropped-rules，并把恢复出的规则合并回 CSV。",
+    )
     return parser
 
 
@@ -264,10 +434,13 @@ def main() -> int:
         extractor=args.extractor,
         llm_model=args.llm_model,
         config_path=args.config,
+        rerun_dropped=args.rerun_dropped,
     )
     print(f"documents={result['documents']}")
     print(f"foundation_rules={result['foundation_rules']}")
     print(f"component_rules={result['component_rules']}")
     print(f"global_rules={result['global_rules']}")
+    if "rerun_dropped_rules" in result:
+        print(f"rerun_dropped_rules={result['rerun_dropped_rules']}")
     print(f"output_dir={result['output_dir']}")
     return 0

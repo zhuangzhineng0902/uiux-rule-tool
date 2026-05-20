@@ -72,6 +72,7 @@ def extract_rules_with_llm(
             rows.extend(doc_rows)
             debug_target = None
             if debug_dir:
+                dropped_details = _dropped_rule_details(payload, doc)
                 debug_target = _write_llm_debug_artifacts(
                     debug_dir=debug_dir,
                     doc_index=index,
@@ -81,10 +82,58 @@ def extract_rules_with_llm(
                     payload=payload,
                     debug_info=debug_info,
                     dropped_messages=dropped_messages,
+                    dropped_details=dropped_details,
                 )
             _emit_dropped_rules_log(dropped_messages, debug_target)
         except LLMExtractorError as exc:
             raise LLMExtractorError(f"解析文件失败：{doc.location}：{exc}") from exc
+
+    return rows
+
+
+def extract_dropped_rules_with_llm(
+    docs: list[SourceDocument],
+    config: AppConfig,
+    model: str | None = None,
+    debug_dir: str | None = None,
+) -> list[RuleRow]:
+    if not can_use_openai_llm(config):
+        raise LLMExtractorError(f"重跑 dropped-rules 时，必须在 {config.config_path} 中配置 OpenAI API key。")
+
+    selected_model = resolve_llm_model(config, model)
+    selected_api_style = resolve_openai_api_style(config)
+    rows: list[RuleRow] = []
+
+    for index, doc in enumerate(docs, start=1):
+        try:
+            print(f"[uiux-rule-tool] 正在重跑 dropped-rules：{doc.location}", file=sys.stderr)
+            payload, debug_info = _extract_doc_payload(
+                doc,
+                config,
+                selected_model,
+                selected_api_style,
+                instructions=_build_dropped_rerun_instructions(),
+                input_text=_build_doc_input(doc),
+            )
+            doc_rows, dropped_messages = _rows_from_payload(payload, doc)
+            rows.extend(doc_rows)
+            debug_target = None
+            if debug_dir:
+                dropped_details = _dropped_rule_details(payload, doc)
+                debug_target = _write_llm_debug_artifacts(
+                    debug_dir=debug_dir,
+                    doc_index=index,
+                    doc=doc,
+                    model=selected_model,
+                    api_style=selected_api_style,
+                    payload=payload,
+                    debug_info=debug_info,
+                    dropped_messages=dropped_messages,
+                    dropped_details=dropped_details,
+                )
+            _emit_dropped_rules_log(dropped_messages, debug_target)
+        except LLMExtractorError as exc:
+            raise LLMExtractorError(f"重跑 dropped-rules 失败：{doc.location}：{exc}") from exc
 
     return rows
 
@@ -94,18 +143,20 @@ def _extract_doc_payload(
     config: AppConfig,
     model: str,
     api_style: str,
+    instructions: str | None = None,
+    input_text: str | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     if api_style == "responses":
-        return _extract_doc_payload_via_responses(doc, config, model)
+        return _extract_doc_payload_via_responses(doc, config, model, instructions=instructions, input_text=input_text)
     if api_style == "chat_completions":
-        return _extract_doc_payload_via_chat_completions(doc, config, model)
+        return _extract_doc_payload_via_chat_completions(doc, config, model, instructions=instructions, input_text=input_text)
     if api_style == "auto":
         try:
-            payload, debug_info = _extract_doc_payload_via_responses(doc, config, model)
+            payload, debug_info = _extract_doc_payload_via_responses(doc, config, model, instructions=instructions, input_text=input_text)
             debug_info["api_style"] = "auto"
             return payload, debug_info
         except LLMExtractorError as responses_error:
-            payload, debug_info = _extract_doc_payload_via_chat_completions(doc, config, model)
+            payload, debug_info = _extract_doc_payload_via_chat_completions(doc, config, model, instructions=instructions, input_text=input_text)
             debug_info["api_style"] = "auto"
             notes = list(debug_info.get("notes", []))
             notes.insert(0, f"responses 接口失败，已回退到 chat/completions：{responses_error}")
@@ -118,12 +169,14 @@ def _extract_doc_payload_via_responses(
     doc: SourceDocument,
     config: AppConfig,
     model: str,
+    instructions: str | None = None,
+    input_text: str | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     request_payload = {
         "model": model,
         "store": False,
-        "instructions": _build_instructions(),
-        "input": _build_doc_input(doc),
+        "instructions": instructions or _build_instructions(),
+        "input": input_text or _build_doc_input(doc),
         "text": {
             "format": {
                 "type": "json_schema",
@@ -150,13 +203,15 @@ def _extract_doc_payload_via_chat_completions(
     doc: SourceDocument,
     config: AppConfig,
     model: str,
+    instructions: str | None = None,
+    input_text: str | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     try:
         request_payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": _build_instructions()},
-                {"role": "user", "content": _build_doc_input(doc)},
+                {"role": "system", "content": instructions or _build_instructions()},
+                {"role": "user", "content": input_text or _build_doc_input(doc)},
             ],
             "response_format": {
                 "type": "json_schema",
@@ -182,7 +237,13 @@ def _extract_doc_payload_via_chat_completions(
         if "模型拒绝执行抽取" in str(structured_error):
             raise
         try:
-            payload, debug_info = _extract_doc_payload_via_chat_completions_plain_json(doc, config, model)
+            payload, debug_info = _extract_doc_payload_via_chat_completions_plain_json(
+                doc,
+                config,
+                model,
+                instructions=instructions,
+                input_text=input_text,
+            )
             notes = list(debug_info.get("notes", []))
             notes.insert(0, f"chat/completions 的 json_schema 模式失败，已回退到纯文本 JSON：{structured_error}")
             debug_info["notes"] = notes
@@ -197,12 +258,21 @@ def _extract_doc_payload_via_chat_completions_plain_json(
     doc: SourceDocument,
     config: AppConfig,
     model: str,
+    instructions: str | None = None,
+    input_text: str | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
+    plain_instructions = (
+        instructions
+        + "22. 你必须只返回一个合法的 JSON 对象，不要附加解释。"
+        + "23. 不要输出 Markdown 代码块，不要输出前后说明文字。"
+        if instructions
+        else _build_plain_json_instructions()
+    )
     request_payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _build_plain_json_instructions()},
-            {"role": "user", "content": _build_doc_input(doc)},
+            {"role": "system", "content": plain_instructions},
+            {"role": "user", "content": input_text or _build_doc_input(doc)},
         ],
     }
     raw = _request_openai_json(request_payload, config, endpoint="chat/completions")
@@ -332,6 +402,17 @@ def _build_plain_json_instructions() -> str:
         + "17. 你必须只返回一个合法的 JSON 对象，不要附加解释。"
         + "18. 不要输出 Markdown 代码块，不要输出前后说明文字。"
         + "19. 顶层字段必须为 foundation_rules、component_rules、global_rules。"
+    )
+
+
+def _build_dropped_rerun_instructions() -> str:
+    return (
+        _build_instructions()
+        + "17. 你正在修复上一轮被 dropped-rules 过滤掉的候选规则。"
+        + "18. 输入中会包含原始候选规则、所属数组和被过滤原因；你必须尽量补齐缺失字段后重新输出。"
+        + "19. 如果 component_rules 缺少 property_name，请从 then_clause、default_value、evidence、component 或交互状态中推断一个可测试属性名，例如 loading-feedback、state_definition、color、opacity、height；不要留空。"
+        + "20. 如果缺少 subject，请从 component、condition_if、evidence、文档标题或原始候选规则语义中推断。"
+        + "21. 不要新增没有证据支撑的规则；确实无法修复的候选规则不要输出。"
     )
 
 
@@ -494,6 +575,32 @@ def _rows_from_payload(payload: dict[str, object], doc: SourceDocument) -> tuple
                 dropped_messages.append(_build_drop_reason(item, payload_key, doc, layer))
 
     return rows, dropped_messages
+
+
+def _dropped_rule_details(payload: dict[str, object], doc: SourceDocument) -> list[dict[str, object]]:
+    details: list[dict[str, object]] = []
+    layer_specs = [
+        ("foundation_rules", "foundation", "FDN"),
+        ("component_rules", "component", "CMP"),
+        ("global_rules", "global", ""),
+    ]
+
+    for payload_key, layer, fixed_prefix in layer_specs:
+        for item in payload.get(payload_key, []):
+            if not isinstance(item, dict):
+                continue
+            if _coerce_rule(item, doc, layer, fixed_prefix) is not None:
+                continue
+            details.append(
+                {
+                    "payload_key": payload_key,
+                    "layer": layer,
+                    "reason": _build_drop_reason(item, payload_key, doc, layer),
+                    "item": item,
+                }
+            )
+
+    return details
 
 
 def _emit_dropped_rules_log(dropped_messages: list[str], debug_target: Path | None) -> None:
@@ -695,6 +802,7 @@ def _write_llm_debug_artifacts(
     payload: dict[str, object],
     debug_info: dict[str, object],
     dropped_messages: list[str],
+    dropped_details: list[dict[str, object]] | None = None,
 ) -> Path:
     target = Path(debug_dir) / "llm" / f"doc-{doc_index:03d}"
     target.mkdir(parents=True, exist_ok=True)
@@ -719,7 +827,13 @@ def _write_llm_debug_artifacts(
     _write_json_file(target / "request.json", debug_info.get("request_payload", {}))
     _write_json_file(target / "raw-response.json", debug_info.get("raw_response", {}))
     _write_json_file(target / "payload.json", payload)
-    _write_json_file(target / "dropped-rules.json", {"dropped_rules": dropped_messages})
+    _write_json_file(
+        target / "dropped-rules.json",
+        {
+            "dropped_rules": dropped_messages,
+            "dropped_rule_items": dropped_details or [],
+        },
+    )
     (target / "output-text.txt").write_text(str(debug_info.get("output_text", "")), encoding="utf-8")
     return target
 

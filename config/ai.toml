@@ -6,6 +6,11 @@ sources = []
 [output]
 directory = "data"
 
+# 运行模式配置
+[run]
+# 可选值: full | rerun_dropped
+mode = "full"
+
 # OpenAI 相关配置
 [openai]
 api_key = ""

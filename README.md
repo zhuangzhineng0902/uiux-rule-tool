@@ -60,7 +60,7 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 python3 ./tool.py --input ./examples/sample-guidelines.md --output-dir ./data
 ```
 
-所有运行时配置都集中在 [config/ai.toml](config/ai.toml) 中，包括输入源、输出目录、抽取策略和 OpenAI 设置。
+所有运行时配置都集中在 [config/ai.toml](config/ai.toml) 中，包括输入源、输出目录、运行模式、抽取策略和 OpenAI 设置。
 
 最小配置示例：
 
@@ -71,6 +71,9 @@ sources = ["./examples/sample-guidelines.md"]
 [output]
 directory = "./data"
 
+[run]
+mode = "full"
+
 [openai]
 api_key = ""
 base_url = "https://api.openai.com/v1"
@@ -80,6 +83,13 @@ api_style = "auto"
 [extraction]
 strategy = "auto"
 ```
+
+`[run].mode` 当前支持以下枚举值：
+
+- `full`
+  默认值。执行全量抽取，按输入源重新解析 Markdown 并生成三类 CSV。
+- `rerun_dropped`
+  只扫描输出目录下已有的 `debug/**/dropped-rules.json`，重跑上一轮被过滤的候选规则，并与现有 CSV 合并。
 
 当 `config/ai.toml` 里已经配置好 `input.sources` 和 `output.directory` 后，可以直接无参运行：
 
@@ -267,9 +277,20 @@ data/
 - `payload.json`
   模型最终返回并被程序解析后的 JSON。
 - `dropped-rules.json`
-  被过滤掉的规则及原因，例如缺少 `subject`；组件规则缺少 `property_name` 也会被过滤。基础规范和全局规范允许 `property_name` 为空。
+  被过滤掉的规则及原因，例如缺少 `subject`；组件规则缺少 `property_name` 也会被过滤。文件中会同时保留原始候选规则，便于后续重跑。基础规范和全局规范允许 `property_name` 为空。
 - `meta.json`
   当前文档保留了多少条规则、丢弃了多少条规则，以及是否发生了接口回退。
+
+如果需要只针对被过滤的规则重跑，可以使用：
+
+```bash
+python3 ./tool.py \
+  --config ./config/ai.toml \
+  --output-dir ./data \
+  --rerun-dropped
+```
+
+该命令会扫描 `debug/**/dropped-rules.json`，把上一轮被过滤的候选规则重新交给 LLM 修复抽取，并与已有 CSV 合并去重后重新编号。重跑过程自己的 debug 文件会写到 `debug/rerun-dropped/` 下，不会再次读取这个目录参与重跑。
 
 补充说明：
 
@@ -291,6 +312,7 @@ docs/
 ## 说明
 
 - `--input`、`--output-dir` 都是可选覆盖项；如果不传，会从 `config/ai.toml` 中读取 `input.sources`、`output.directory`。
+- `[run].mode = "rerun_dropped"` 时，可以不配置 `input.sources`，程序会直接从输出目录的 debug 文件中重跑 dropped-rules；命令行 `--rerun-dropped` 可临时覆盖运行模式。
 - 当前版本只支持本地 Markdown 文件和目录输入，不支持网站 URL。
 - 为了兼容旧配置，`input.source` 仍然可用，但推荐统一使用 `input.sources`。
 - 在 `auto` 模式下，如果 `config/ai.toml` 中配置了 `openai.api_key`，会优先使用 OpenAI Responses API 的结构化输出；否则自动回退到启发式抽取器。

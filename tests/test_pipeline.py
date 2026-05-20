@@ -27,7 +27,7 @@ from uiux_rule_tool.llm_extractor import (
     extract_rules_with_llm,
 )
 from uiux_rule_tool.models import RuleRow, SourceDocument
-from uiux_rule_tool.writer import CSV_FILE_ENCODING
+from uiux_rule_tool.writer import CSV_FILE_ENCODING, write_csvs
 
 
 class FakeJSONResponse:
@@ -656,8 +656,168 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(meta["dropped_rule_count"], 1)
             self.assertEqual(len(dropped["dropped_rules"]), 1)
             self.assertIn("缺少 property_name", dropped["dropped_rules"][0])
+            self.assertEqual(len(dropped["dropped_rule_items"]), 1)
+            self.assertEqual(dropped["dropped_rule_items"][0]["payload_key"], "component_rules")
+            self.assertIn("item", dropped["dropped_rule_items"][0])
             self.assertIn(str(debug_dir), stderr.getvalue())
             self.assertIn(str(debug_dir / "dropped-rules.json"), stderr.getvalue())
+
+    def test_rerun_dropped_rules_merges_recovered_rows_into_csvs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            output_dir.mkdir()
+            existing_row = RuleRow(
+                prefix="FDN",
+                layer="foundation",
+                page_type="foundation",
+                subject="Primary color",
+                component="",
+                state="default",
+                property_name="color",
+                condition_if="If 语义令牌 = Primary color",
+                then_clause="Then color 必须为 #0067D1",
+                else_clause="Else 保持默认规则",
+                default_value="#0067D1",
+                preferred_pattern="使用统一 token",
+                anti_pattern="禁止硬编码相近颜色",
+                evidence="Primary color: #0067D1",
+                source_ref="tokens.md",
+                rule_id="FDN-001",
+            )
+            write_csvs([existing_row], str(output_dir))
+
+            debug_dir = output_dir / "debug" / "llm" / "doc-001"
+            debug_dir.mkdir(parents=True)
+            (debug_dir / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "location": "/tmp/button.md",
+                        "title": "Button",
+                        "source_type": "markdown",
+                        "source_bucket": "component",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (debug_dir / "payload.json").write_text(
+                json.dumps({"foundation_rules": [], "component_rules": [], "global_rules": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (debug_dir / "dropped-rules.json").write_text(
+                json.dumps(
+                    {
+                        "dropped_rules": ["component_rules:button: 缺少 property_name"],
+                        "dropped_rule_items": [
+                            {
+                                "payload_key": "component_rules",
+                                "layer": "component",
+                                "reason": "component_rules:button: 缺少 property_name",
+                                "item": {
+                                    "subject": "button",
+                                    "component": "button",
+                                    "state": "loading",
+                                    "property_name": "",
+                                    "condition_if": "If button 进入 loading 状态",
+                                    "then_clause": "Then 必须展示 loading 反馈",
+                                    "else_clause": "Else 保持默认规则",
+                                    "default_value": "",
+                                    "preferred_pattern": "使用统一 loading 反馈",
+                                    "anti_pattern": "禁止无反馈",
+                                    "evidence": "button loading",
+                                },
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            recovered_row = RuleRow(
+                prefix="CMP",
+                layer="component",
+                page_type="component",
+                subject="button",
+                component="button",
+                state="loading",
+                property_name="loading-feedback",
+                condition_if="If button 进入 loading 状态",
+                then_clause="Then 必须展示 loading 反馈",
+                else_clause="Else 保持默认规则",
+                default_value="required",
+                preferred_pattern="使用统一 loading 反馈",
+                anti_pattern="禁止无反馈",
+                evidence="button loading",
+                source_ref="button.md",
+            )
+            captured_docs: list[SourceDocument] = []
+
+            def fake_rerun(docs, **_kwargs):
+                captured_docs.extend(docs)
+                return [recovered_row]
+
+            with patch("uiux_rule_tool.cli.extract_dropped_rules_with_llm", side_effect=fake_rerun):
+                result = run(None, output_dir=str(output_dir), rerun_dropped=True)
+
+            self.assertEqual(result["rerun_dropped_rules"], 1)
+            self.assertEqual(result["foundation_rules"], 1)
+            self.assertEqual(result["component_rules"], 1)
+            self.assertEqual(len(captured_docs), 1)
+            self.assertEqual(captured_docs[0].source_type, "dropped-rules")
+            self.assertIn("component_rules:button: 缺少 property_name", captured_docs[0].text)
+
+            with (output_dir / "component-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                component_rows = list(csv.DictReader(handle))
+
+            self.assertEqual(component_rows[0]["subject"], "button")
+            self.assertEqual(component_rows[0]["property_name"], "loading-feedback")
+
+    def test_config_run_mode_can_select_rerun_dropped(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            debug_dir = output_dir / "debug" / "llm" / "doc-001"
+            debug_dir.mkdir(parents=True)
+            (debug_dir / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "location": "/tmp/button.md",
+                        "title": "Button",
+                        "source_type": "markdown",
+                        "source_bucket": "component",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (debug_dir / "dropped-rules.json").write_text(
+                json.dumps(
+                    {
+                        "dropped_rule_items": [
+                            {
+                                "payload_key": "component_rules",
+                                "layer": "component",
+                                "reason": "component_rules:button: 缺少 property_name",
+                                "item": {"subject": "button", "component": "button"},
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            config_path = Path(temp_dir) / "ai.toml"
+            config_path.write_text(
+                f'[output]\ndirectory = "{output_dir}"\n\n'
+                '[run]\nmode = "rerun_dropped"\n\n'
+                '[openai]\napi_key = "test-key"\nbase_url = "https://example.com/v1"\nmodel = "gpt-5.4-mini"\n',
+                encoding="utf-8",
+            )
+
+            with patch("uiux_rule_tool.cli.extract_dropped_rules_with_llm", return_value=[]):
+                result = run(None, config_path=str(config_path))
+
+            self.assertIn("rerun_dropped_rules", result)
+            self.assertEqual(result["documents"], 1)
 
     def test_remote_url_from_config_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1046,6 +1206,7 @@ class PipelineTest(unittest.TestCase):
             config_path.write_text(
                 '[input]\nsources = ["./docs"]\n\n'
                 '[output]\ndirectory = "./exports"\n\n'
+                '[run]\nmode = "rerun_dropped"\n\n'
                 '[openai]\napi_key = "demo-key"\nbase_url = "https://example.com/v1"\nmodel = "gpt-5.4-mini"\napi_style = "chat_completions"\n\n'
                 '[extraction]\nstrategy = "llm"\n',
                 encoding="utf-8",
@@ -1060,6 +1221,7 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(config.openai.model, "gpt-5.4-mini")
             self.assertEqual(config.openai.api_style, "chat_completions")
             self.assertEqual(config.extraction.strategy, "llm")
+            self.assertEqual(config.run.mode, "rerun_dropped")
 
     def test_legacy_single_input_source_is_still_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
