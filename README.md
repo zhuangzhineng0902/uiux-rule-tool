@@ -242,13 +242,14 @@ python3 ./tool.py
 
 ## 调试排查
 
-当使用 LLM 抽取时，程序会自动把每个文档的中间结果写到输出目录下的 `debug/llm/` 中，便于排查“模型明明返回了 JSON，但规则没有写进 CSV”的情况。
+当使用 LLM 抽取时，程序会自动把每个文档的中间结果写到输出目录下的 `debug/llm/` 中，便于排查“模型明明返回了 JSON，但规则没有写进 CSV”的情况。多文件输入会按文件写入 `debug/documents/<文件名-hash>/llm/`，避免不同文档的 debug 文件互相覆盖。
 
 目录结构示例：
 
 ```text
 data/
   debug/
+    resume-state.json
     llm/
       doc-001/
         meta.json
@@ -258,6 +259,8 @@ data/
         dropped-rules.json
         output-text.txt
 ```
+
+`resume-state.json` 是断点续跑状态文件。每个文件抽取完成后都会更新该文件；如果运行意外中断，下一次使用相同输入、抽取器和模型重新运行时，会从上次已完成文件之后继续处理，并在控制台打印被跳过的文件名。完整运行成功后，该断点文件会自动删除。
 
 排查时可以重点看：
 

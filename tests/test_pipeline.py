@@ -706,6 +706,147 @@ class PipelineTest(unittest.TestCase):
             self.assertTrue(any(row["subject"] == "Primary color" for row in foundation_rows))
             self.assertTrue(any("屏幕宽度 < 600px" in row["condition_if"] for row in global_rows))
 
+    def test_run_resumes_from_last_completed_file_after_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_dir = Path(temp_dir) / "docs"
+            docs_dir.mkdir()
+            file_one = docs_dir / "01-tokens.md"
+            file_two = docs_dir / "02-layout.md"
+            file_one.write_text("# Tokens\n\n- Primary color: #0067D1\n", encoding="utf-8")
+            file_two.write_text("# Layout\n\n如果 屏幕宽度 < 600px，则 底部操作栏 必须 撑满全屏。\n", encoding="utf-8")
+
+            output_dir = Path(temp_dir) / "out"
+            checkpoint = output_dir / "debug" / "resume-state.json"
+
+            def foundation_row(source: Path) -> RuleRow:
+                return RuleRow(
+                    prefix="FDN",
+                    layer="foundation",
+                    page_type="foundation",
+                    subject="Primary color",
+                    component="",
+                    state="default",
+                    property_name="color",
+                    condition_if="If 语义令牌 = Primary color",
+                    then_clause="Then color 必须为 #0067D1",
+                    else_clause="Else 禁止使用未登记的 color 取值",
+                    default_value="#0067D1",
+                    preferred_pattern="使用统一 token",
+                    anti_pattern="禁止硬编码相近颜色",
+                    evidence="Primary color: #0067D1",
+                    source_ref=str(source),
+                )
+
+            def global_row(source: Path) -> RuleRow:
+                return RuleRow(
+                    prefix="LAY",
+                    layer="global",
+                    page_type="layout",
+                    subject="bottom-action-bar",
+                    component="",
+                    state="default",
+                    property_name="logical-assertion",
+                    condition_if="If 屏幕宽度 < 600px",
+                    then_clause="Then 底部操作栏 必须 撑满全屏",
+                    else_clause="Else 保持默认规则",
+                    default_value="底部操作栏 必须 撑满全屏",
+                    preferred_pattern="写成可测试断言",
+                    anti_pattern="禁止模糊描述",
+                    evidence="如果 屏幕宽度 < 600px，则 底部操作栏 必须 撑满全屏。",
+                    source_ref=str(source),
+                )
+
+            def interrupted_generate(documents, **_kwargs):
+                source = Path(documents[0].location)
+                if source.name == file_one.name:
+                    return [foundation_row(source)]
+                raise RuntimeError("mock interruption")
+
+            with (
+                patch("uiux_rule_tool.cli._generate_non_official_rules", side_effect=interrupted_generate),
+                self.assertRaisesRegex(RuntimeError, "mock interruption"),
+            ):
+                run(str(docs_dir), output_dir=str(output_dir), extractor="heuristic")
+
+            self.assertTrue(checkpoint.exists())
+            checkpoint_payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+            self.assertIn(str(file_one.resolve()), checkpoint_payload["completed_documents"])
+            self.assertNotIn(str(file_two.resolve()), checkpoint_payload["completed_documents"])
+
+            processed_files: list[str] = []
+
+            def resumed_generate(documents, **_kwargs):
+                source = Path(documents[0].location)
+                processed_files.append(source.name)
+                return [global_row(source)]
+
+            stderr = StringIO()
+            with (
+                patch("uiux_rule_tool.cli._generate_non_official_rules", side_effect=resumed_generate),
+                patch("sys.stderr", stderr),
+            ):
+                result = run(str(docs_dir), output_dir=str(output_dir), extractor="heuristic")
+
+            self.assertEqual(processed_files, [file_two.name])
+            self.assertFalse(checkpoint.exists())
+            self.assertEqual(result["foundation_rules"], 1)
+            self.assertEqual(result["global_rules"], 1)
+            self.assertIn(f"跳过已完成文件：{file_one}", stderr.getvalue())
+
+            with (output_dir / "foundation-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                foundation_rows = list(csv.DictReader(handle))
+            with (output_dir / "global-layout-rules.csv").open(encoding=CSV_FILE_ENCODING) as handle:
+                global_rows = list(csv.DictReader(handle))
+
+            self.assertEqual(foundation_rows[0]["subject"], "Primary color")
+            self.assertEqual(global_rows[0]["subject"], "bottom-action-bar")
+
+    def test_completed_run_does_not_skip_files_on_next_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_dir = Path(temp_dir) / "docs"
+            docs_dir.mkdir()
+            file_one = docs_dir / "01-tokens.md"
+            file_two = docs_dir / "02-layout.md"
+            file_one.write_text("# Tokens\n\n- Primary color: #0067D1\n", encoding="utf-8")
+            file_two.write_text("# Layout\n\n- Secondary color: #999999\n", encoding="utf-8")
+
+            output_dir = Path(temp_dir) / "out"
+            processed_files: list[str] = []
+
+            def generated_row(source: Path) -> RuleRow:
+                return RuleRow(
+                    prefix="FDN",
+                    layer="foundation",
+                    page_type="foundation",
+                    subject=source.stem,
+                    component="",
+                    state="default",
+                    property_name="color",
+                    condition_if=f"If 文件 = {source.name}",
+                    then_clause="Then color 必须使用登记值",
+                    else_clause="Else 保持默认规则",
+                    default_value="#0067D1",
+                    preferred_pattern="使用统一 token",
+                    anti_pattern="禁止硬编码相近颜色",
+                    evidence=source.name,
+                    source_ref=str(source),
+                )
+
+            def fake_generate(documents, **_kwargs):
+                source = Path(documents[0].location)
+                processed_files.append(source.name)
+                return [generated_row(source)]
+
+            with patch("uiux_rule_tool.cli._generate_non_official_rules", side_effect=fake_generate):
+                run(str(docs_dir), output_dir=str(output_dir), extractor="heuristic")
+                run(str(docs_dir), output_dir=str(output_dir), extractor="heuristic")
+
+            self.assertEqual(
+                processed_files,
+                [file_one.name, file_two.name, file_one.name, file_two.name],
+            )
+            self.assertFalse((output_dir / "debug" / "resume-state.json").exists())
+
     def test_overlapping_directory_and_file_inputs_are_deduplicated(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             docs_dir = Path(temp_dir) / "docs"

@@ -54,7 +54,7 @@ def _infer_root_bucket(root: Path) -> str:
     return ""
 
 
-def load_markdown_docs(path_value: str) -> list[SourceDocument]:
+def load_markdown_docs(path_value: str, skip_locations: set[str] | None = None) -> list[SourceDocument]:
     root = Path(path_value)
     if not root.exists():
         raise FileNotFoundError(f"输入路径不存在：{path_value}")
@@ -65,8 +65,13 @@ def load_markdown_docs(path_value: str) -> list[SourceDocument]:
     if not files:
         raise ValueError(f"目录中未找到 Markdown 文件：{path_value}")
     documents: list[SourceDocument] = []
+    skipped = skip_locations or set()
 
     for file in files:
+        normalized_file = str(file.resolve())
+        if normalized_file in skipped:
+            print(f"[uiux-rule-tool] 跳过已完成文件：{file}", file=sys.stderr)
+            continue
         try:
             print(f"[uiux-rule-tool] 正在解析文件：{file}", file=sys.stderr)
             text = file.read_text(encoding="utf-8", errors="ignore")
@@ -91,8 +96,8 @@ def load_markdown_docs(path_value: str) -> list[SourceDocument]:
     return documents
 
 
-def load_documents(input_value: str) -> list[SourceDocument]:
+def load_documents(input_value: str, skip_locations: set[str] | None = None) -> list[SourceDocument]:
     parsed = urlparse(input_value)
     if parsed.scheme in {"http", "https"}:
         raise ValueError("当前版本仅支持本地 Markdown 文件或目录，不支持网站 URL。")
-    return load_markdown_docs(input_value)
+    return load_markdown_docs(input_value, skip_locations=skip_locations)
