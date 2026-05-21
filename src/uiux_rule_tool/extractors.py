@@ -716,7 +716,6 @@ def dedupe_rules(rows: list[RuleRow]) -> list[RuleRow]:
             row.state,
             row.property_name,
             row.condition_if,
-            row.default_value,
             row.anti_pattern,
         )
         if key in seen:

@@ -21,8 +21,6 @@ CSV_COLUMNS = [
     "condition_if",
     "then_clause",
     "else_clause",
-    "default_value",
-    "preferred_pattern",
     "anti_pattern",
     "evidence",
     "source_ref",
@@ -144,7 +142,6 @@ class UIUXRulesSkillTest(unittest.TestCase):
                         "property_name": "spacing",
                         "condition_if": "If 使用间距令牌",
                         "then_clause": "Then spacing 必须从 8px|12px 中选择",
-                        "default_value": "8px|12px",
                     }
                 ],
             )

@@ -1275,6 +1275,8 @@ class PipelineTest(unittest.TestCase):
 
             self.assertEqual(foundation_rows[0]["subject"], "LLM 主字号")
             self.assertNotIn("page_type", foundation_rows[0])
+            self.assertNotIn("default_value", foundation_rows[0])
+            self.assertNotIn("preferred_pattern", foundation_rows[0])
             self.assertEqual(foundation_rows[0]["source_ref"], "sample-guidelines.md")
 
     def test_auto_extractor_falls_back_to_heuristic_when_llm_fails(self) -> None:

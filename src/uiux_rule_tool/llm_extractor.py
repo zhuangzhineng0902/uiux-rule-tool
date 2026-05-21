@@ -410,7 +410,7 @@ def _build_dropped_rerun_instructions() -> str:
         _build_instructions()
         + "17. 你正在修复上一轮被 dropped-rules 过滤掉的候选规则。"
         + "18. 输入中会包含原始候选规则、所属数组和被过滤原因；你必须尽量补齐缺失字段后重新输出。"
-        + "19. 如果 component_rules 缺少 property_name，请从 then_clause、default_value、evidence、component 或交互状态中推断一个可测试属性名，例如 loading-feedback、state_definition、color、opacity、height；不要留空。"
+        + "19. 如果 component_rules 缺少 property_name，请从 then_clause、evidence、component 或交互状态中推断一个可测试属性名，例如 loading-feedback、state_definition、color、opacity、height；不要留空。"
         + "20. 如果缺少 subject，请从 component、condition_if、evidence、文档标题或原始候选规则语义中推断。"
         + "21. 不要新增没有证据支撑的规则；确实无法修复的候选规则不要输出。"
     )
@@ -524,8 +524,6 @@ def _rule_schema() -> dict[str, object]:
             "condition_if",
             "then_clause",
             "else_clause",
-            "default_value",
-            "preferred_pattern",
             "anti_pattern",
             "evidence",
         ],
@@ -537,8 +535,6 @@ def _rule_schema() -> dict[str, object]:
             "condition_if": {"type": "string"},
             "then_clause": {"type": "string"},
             "else_clause": {"type": "string"},
-            "default_value": {"type": "string"},
-            "preferred_pattern": {"type": "string"},
             "anti_pattern": {"type": "string"},
             "evidence": {"type": "string"},
         },

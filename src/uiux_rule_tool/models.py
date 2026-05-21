@@ -22,8 +22,6 @@ CSV_COLUMNS = [
     "condition_if",
     "then_clause",
     "else_clause",
-    "default_value",
-    "preferred_pattern",
     "anti_pattern",
     "evidence",
     "source_ref",

@@ -28,8 +28,6 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 - `condition_if`
 - `then_clause`
 - `else_clause`
-- `default_value`
-- `preferred_pattern`
 - `anti_pattern`
 - `evidence`
 - `source_ref`
@@ -37,8 +35,6 @@ CSV 中每一行都必须是原子规则，只描述一个属性。
 和需求直接对应的关键字段有：
 
 - `rule_id`
-- `default_value`
-- `preferred_pattern`
 - `anti_pattern`
 
 `source_ref` 只保留来源 Markdown 文件名，例如 `sample-guidelines.md`，不写完整本地路径；非 Markdown 的内置来源会保留短标识。
@@ -297,7 +293,6 @@ python3 ./tool.py \
 
 补充说明：
 
-- `default_value` 允许为空，系统会优先保留规则本身，不会因为 `default_value` 为空就直接过滤掉该规则。
 - `foundation_rules` 和 `global_rules` 的 `property_name` 允许为空，这类规则通常作为语义规范或交互断言保留；`component_rules` 仍需要提供 `property_name`，以便按组件状态进行检查。
 
 结构化 Markdown 目录示例：
